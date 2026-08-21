@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend — install, load, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: backend
+        run: npm ci || npm install
+
+      # This is the gate that matters. `node --check` only parses; a module
+      # that throws while EVALUATING passes every syntax check and still takes
+      # the whole API down at boot. See tests/load.test.mjs.
+      - name: Load every module
+        working-directory: backend
+        run: node tests/load.test.mjs
+
+      - name: Unit tests
+        working-directory: backend
+        run: |
+          node tests/booking.test.mjs
+          node tests/loyalty.test.mjs
+          node tests/phase4.test.mjs
+          node tests/phase5.test.mjs
+
+      - name: Boot check
+        working-directory: backend
+        env:
+          NODE_ENV: development
+          JWT_SECRET: ci_only_secret_value_at_least_32_characters
+          JWT_REFRESH_SECRET: ci_only_refresh_value_at_least_32_chars
+        run: |
+          node src/server.js &
+          PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -sf http://localhost:5000/api/health || (kill $PID; exit 1)
+          curl -sf http://localhost:5000/api/ready  || (kill $PID; exit 1)
+          curl -sf http://localhost:5000/api/config || (kill $PID; exit 1)
+          kill $PID
+
+  frontend:
+    name: Frontend — build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci || npm install
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Check the bundle was produced
+        working-directory: frontend
+        run: test -f dist/index.html && test -d dist/assets
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t gameon-api ./backend
+      - run: docker build -t gameon-web ./frontend

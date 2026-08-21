@@ -1,0 +1,444 @@
+import { randomUUID } from 'node:crypto';
+import { Booking, TeamUpPost, User, Venue, Review } from '../models/index.js';
+import { BOOKING_STATUS } from '../config/constants.js';
+import * as notify from './notification.service.js';
+import * as wallet from './wallet.service.js';
+import * as loyalty from './loyalty.service.js';
+
+/**
+ * Scheduled housekeeping.
+ *
+ * This closes three gaps that were live through Phases 2–4:
+ *
+ *  1. Nothing ever set `COMPLETED`. Every query that filtered on it — promo
+ *     first-booking checks, payouts, revenue — was quietly working off
+ *     `CONFIRMED` alone, and `gamesPlayed` never moved.
+ *  2. A manual venue that never answered left a booking `pending` forever,
+ *     holding the slot and blocking anyone else from taking it.
+ *  3. `reliabilityScore` existed on the user model and nothing ever changed
+ *     it, so the number TeamUp shows people was decorative.
+ *
+ * Every step is idempotent, so running it twice is harmless. It runs on an
+ * interval in-process and can also be triggered from the admin API.
+ */
+
+/** How recently a game must have ended for a review prompt to still be welcome. */
+const REVIEW_PROMPT_WINDOW_MS = 48 * 3600 * 1000;
+
+/**
+ * Bookings whose end time has passed become COMPLETED.
+ *
+ * Claim first, read second. Finding rows and then updating them meant two API
+ * instances could each see the same booking as unfinished, and each increment
+ * `gamesPlayed` and each send a review prompt. Stamping a run id inside the
+ * same update makes the database pick a winner, and reading back by that id
+ * returns exactly the rows this run owns.
+ */
+const COMPLETE_BATCH = 500;
+
+async function completeFinishedBookings(now, runId) {
+  // Bounded. `updateMany` takes no limit, so pick the batch by id first — the
+  // first run against an existing database would otherwise complete every
+  // booking ever made in one statement and load them all into memory.
+  const batch = await Booking.find({ status: BOOKING_STATUS.CONFIRMED, endsAt: { $lte: now } })
+    .select('_id')
+    .sort({ endsAt: 1 })
+    .limit(COMPLETE_BATCH)
+    .lean();
+  if (!batch.length) return { completed: 0, players: 0 };
+
+  const claim = await Booking.updateMany(
+    {
+      _id: { $in: batch.map((b) => b._id) },
+      status: BOOKING_STATUS.CONFIRMED,          // still conditional: another
+    },                                           // instance may have taken it
+    { $set: { status: BOOKING_STATUS.COMPLETED, slotLocked: false, lifecycleRun: runId } }
+  );
+  if (!claim.modifiedCount) return { completed: 0, players: 0 };
+
+  const finished = await Booking.find({ lifecycleRun: runId })
+    .select('_id user groupRef venue endsAt')
+    .lean();
+  if (!finished.length) return { completed: 0, players: 0 };
+
+  // One game played per booking group, not per slot — a 3-hour booking is
+  // still one game.
+  const groups = new Map();
+  for (const b of finished) {
+    const key = `${b.user}-${b.groupRef}`;
+    if (!groups.has(key)) groups.set(key, b);
+  }
+
+  const perUser = new Map();
+  for (const b of groups.values()) {
+    perUser.set(String(b.user), (perUser.get(String(b.user)) || 0) + 1);
+  }
+
+  await Promise.all(
+    [...perUser].map(([userId, count]) =>
+      User.updateOne({ _id: userId }, { $inc: { gamesPlayed: count } })
+    )
+  );
+
+  // Ask for a review — but only for games that finished recently. On the first
+  // run against an existing database every past booking completes at once, and
+  // without this window every user would be handed a wall of review prompts
+  // for games they played months ago.
+  const fresh = [...groups.values()].filter(
+    (b) => now.getTime() - new Date(b.endsAt).getTime() <= REVIEW_PROMPT_WINDOW_MS
+  );
+
+  // Wrapped: a failure fetching venues or reviews must not abort the step.
+  // Everything durable (status, gamesPlayed) is already written by this
+  // point, and an aborted step cannot be retried — the rows are no longer
+  // CONFIRMED, so no later run would ever select them again.
+  try {
+  if (fresh.length) {
+    // Two batched queries instead of two per booking.
+    const venueIds = [...new Set(fresh.map((b) => String(b.venue)))];
+    const venues = await Venue.find({ _id: { $in: venueIds } }).select('name').lean();
+    const venueName = new Map(venues.map((v) => [String(v._id), v.name]));
+
+    const existing = await Review.find({
+      user: { $in: [...new Set(fresh.map((b) => String(b.user)))] },
+      venue: { $in: venueIds },
+    }).select('user venue').lean();
+    const reviewed = new Set(existing.map((r) => `${r.user}-${r.venue}`));
+
+    for (const b of fresh) {
+      if (reviewed.has(`${b.user}-${b.venue}`)) continue;
+      const name = venueName.get(String(b.venue));
+      if (!name) continue;
+      await notify.notify(b.user, 'review_request', {
+        body: `How was your game at ${name}? A quick rating helps other players.`,
+        link: `/bookings/${b.groupRef}`,
+      });
+    }
+  }
+
+  } catch (err) {
+    console.error('[lifecycle] review prompts failed:', err.message);
+  }
+
+  // Release the claim so the marker never accumulates across runs.
+  await Booking.updateMany({ lifecycleRun: runId }, { $set: { lifecycleRun: '' } });
+
+  return { completed: finished.length, players: perUser.size };
+}
+
+/**
+ * A manual venue that never responded should not hold a slot indefinitely.
+ * Expire the request and release the slot.
+ *
+ * Two rules keep this from doing damage:
+ *
+ *  - A request must have had a fair chance. Expiring purely on "starts within
+ *    two hours" killed same-evening bookings within minutes of being made —
+ *    someone booking a 7pm pitch at 6pm had the request cancelled by the next
+ *    lifecycle tick, before the owner's phone had finished buzzing.
+ *  - Some manual bookings are paid up front. Flipping those to EXPIRED while
+ *    saying "nothing was charged" stranded real money, with no refund and no
+ *    record that one was owed. Anything with `amountPaid > 0` is refunded in
+ *    full — the venue failed to answer, so no policy deduction applies.
+ */
+const MIN_REQUEST_AGE_MS = 45 * 60 * 1000;
+
+async function expireStaleRequests(now) {
+  const cutoff = new Date(now.getTime() + 2 * 3600 * 1000);
+  const oldEnough = new Date(now.getTime() - MIN_REQUEST_AGE_MS);
+
+  const stale = await Booking.find({
+    status: BOOKING_STATUS.PENDING,
+    startsAt: { $lte: cutoff },
+    createdAt: { $lte: oldEnough },
+  })
+    .select('_id user groupRef venue payment pointsAwarded bookingRef')
+    .limit(500)
+    .lean();
+
+  if (!stale.length) return { expired: 0, refunded: 0 };
+
+  // Group first, then flip each group with its own conditional update. One
+  // bulk updateMany could expire a request the owner confirmed a millisecond
+  // ago, and gave no way to tell which groups this run actually claimed — so
+  // a second instance of the job would refund the same money again.
+  const groups = new Map();
+  for (const b of stale) {
+    if (!groups.has(b.groupRef)) groups.set(b.groupRef, []);
+    groups.get(b.groupRef).push(b);
+  }
+
+  let expired = 0;
+  let refunded = 0;
+
+  for (const [groupRef, rows] of groups) {
+    const flip = await Booking.updateMany(
+      { groupRef, status: BOOKING_STATUS.PENDING },
+      {
+        $set: {
+          status: BOOKING_STATUS.EXPIRED,
+          slotLocked: false,
+          'cancellation.cancelledAt': now,
+          'cancellation.reason': 'Venue did not confirm in time',
+        },
+      }
+    );
+    // Someone else got there first — the owner confirming, the player
+    // cancelling, another instance of this job. Touch no money.
+    if (!flip.modifiedCount) continue;
+    expired += 1;
+
+    // Re-read the WHOLE group after the flip. `stale` only held the rows whose
+    // own start time fell inside the two-hour window, but the flip expires
+    // every pending row of the group — so an 8–11pm request seen at 6:30pm
+    // had its refund computed from two of its three slots.
+    const all = await Booking.find({ groupRef, status: BOOKING_STATUS.EXPIRED })
+      .select('_id user payment pointsAwarded bookingRef venue')
+      .lean();
+    const group = all.length ? all : rows;
+
+    const paid = group.reduce((sum, b) => sum + (b.payment?.amountPaid || 0), 0);
+    const venue = await Venue.findById(rows[0].venue).select('name').lean();
+
+    if (paid > 0) {
+      // Move the money FIRST. Stamping `refundStatus: 'processed'` before the
+      // credit meant a failed credit left a booking that claimed to be
+      // refunded, with no transaction behind it and no way to retry — the
+      // flip filter requires PENDING, which it no longer is.
+      await wallet.credit(rows[0].user, paid, {
+        type: 'refund',
+        description: `Refund — ${venue?.name || 'venue'} did not confirm`,
+        reference: rows[0].bookingRef || '',
+      });
+      await Booking.updateMany(
+        { groupRef, status: BOOKING_STATUS.EXPIRED },
+        { $set: { 'cancellation.refundStatus': 'processed' } }
+      );
+      await Booking.updateOne(
+        { _id: rows[0]._id },
+        { $set: { 'cancellation.refundAmount': paid } }
+      );
+      refunded += paid;
+    }
+
+    // A pending booking should never have earned points, but if any path ever
+    // awards them before confirmation, do not leave them banked against a
+    // game that never happened.
+    const earned = group.reduce((sum, b) => sum + (b.pointsAwarded || 0), 0);
+    if (earned > 0) {
+      await loyalty.revoke(rows[0].user, earned, { reason: 'Request expired' });
+      await Booking.updateMany({ groupRef }, { $set: { pointsAwarded: 0 } });
+    }
+
+    await notify.notify(rows[0].user, 'booking_rejected', {
+      title: 'Request expired',
+      body: paid > 0
+        ? `${venue?.name || 'The venue'} did not confirm in time. Your slot was released and ₹${paid} is back in your wallet.`
+        : `${venue?.name || 'The venue'} did not confirm in time, so your slot was released. Nothing was charged.`,
+      link: '/bookings',
+    });
+  }
+
+  return { expired, refunded };
+}
+
+/**
+ * Reminder the evening before a confirmed game.
+ *
+ * `reminderSentAt` is stamped in the claiming update, before any notification
+ * is sent. Sending first and stamping afterwards meant a crash — or a second
+ * instance — in between sent the same reminder twice. A reminder lost to a
+ * crash is a far smaller problem than one delivered three times at midnight.
+ */
+async function sendReminders(now, runId) {
+  const from = new Date(now.getTime() + 22 * 3600 * 1000);
+  const to = new Date(now.getTime() + 26 * 3600 * 1000);
+
+  const claim = await Booking.updateMany(
+    {
+      status: BOOKING_STATUS.CONFIRMED,
+      reminderSentAt: null,
+      startsAt: { $gte: from, $lte: to },
+    },
+    { $set: { reminderSentAt: now, lifecycleRun: `r:${runId}` } }
+  );
+  if (!claim.modifiedCount) return { reminders: 0 };
+
+  const upcoming = await Booking.find({ lifecycleRun: `r:${runId}` })
+    .select('_id user groupRef venue startsAt')
+    .lean();
+
+  const byGroup = new Map();
+  for (const b of upcoming) if (!byGroup.has(b.groupRef)) byGroup.set(b.groupRef, b);
+
+  const venues = await Venue.find({
+    _id: { $in: [...new Set(upcoming.map((b) => String(b.venue)))] },
+  }).select('name').lean();
+  const venueName = new Map(venues.map((v) => [String(v._id), v.name]));
+
+  for (const b of byGroup.values()) {
+    await notify.notify(b.user, 'booking_reminder', {
+      body: `Your game at ${venueName.get(String(b.venue)) || 'the venue'} is tomorrow. Tap for your ticket.`,
+      link: `/bookings/${b.groupRef}`,
+    });
+  }
+
+  await Booking.updateMany({ lifecycleRun: `r:${runId}` }, { $set: { lifecycleRun: '' } });
+
+  return { reminders: byGroup.size };
+}
+
+/**
+ * Reliability. A TeamUp game that has been played counts as a kept commitment
+ * for everyone who stayed in it; withdrawing after being accepted, close to
+ * kickoff, counts against you.
+ *
+ * The score is a bounded walk rather than a ratio, so one bad week does not
+ * erase a year of turning up, and a new account cannot look perfect forever.
+ */
+async function settleReliability(now) {
+  // `expired` is in this list deliberately. The feed marks any past-kickoff
+  // open post expired on every page load, which used to happen long before
+  // this job ran — so the score it fed never moved for anybody. A game that
+  // kicked off and was never cancelled counts, whatever the feed labelled it.
+  const candidates = await TeamUpPost.find({
+    status: { $in: ['open', 'filled', 'expired'] },
+    playAt: { $lt: now },
+    reliabilitySettled: { $ne: true },
+  })
+    .select('_id')
+    .limit(200)
+    .lean();
+
+  if (!candidates.length) return { settled: 0 };
+
+  let settled = 0;
+
+  for (const { _id } of candidates) {
+    // Claim the post before touching a single score. `find` then bulk-update
+    // let two instances both settle the same game and each award +2.
+    const post = await TeamUpPost.findOneAndUpdate(
+      { _id, reliabilitySettled: { $ne: true } },
+      { $set: { reliabilitySettled: true, status: 'completed' } },
+      { new: false, projection: 'host confirmedPlayers joinRequests playAt' }
+    ).lean();
+    if (!post) continue;
+    settled += 1;
+
+    const kept = [String(post.host), ...(post.confirmedPlayers || []).map(String)];
+    await Promise.all(
+      [...new Set(kept)].map((userId) =>
+        User.updateOne(
+          { _id: userId, reliabilityScore: { $lt: 100 } },
+          { $inc: { reliabilityScore: 2 } }
+        )
+      )
+    );
+
+    // Late withdrawals — pulled out within 12 hours of kickoff, and only by
+    // someone who had actually been given a spot. Penalising a player whose
+    // request the host never answered punished them for the host's silence.
+    const lateCutoff = new Date(new Date(post.playAt).getTime() - 12 * 3600 * 1000);
+    const bailed = (post.joinRequests || []).filter(
+      (r) => r.status === 'withdrawn'
+        && r.wasAccepted
+        && r.respondedAt
+        && new Date(r.respondedAt) > lateCutoff
+    );
+    await Promise.all(
+      bailed.map((r) =>
+        User.updateOne(
+          { _id: r.user, reliabilityScore: { $gt: 0 } },
+          { $inc: { reliabilityScore: -8 } }
+        )
+      )
+    );
+  }
+
+  // Clamp, in case a concurrent update pushed a score past a bound.
+  await User.updateMany({ reliabilityScore: { $gt: 100 } }, { $set: { reliabilityScore: 100 } });
+  await User.updateMany({ reliabilityScore: { $lt: 0 } }, { $set: { reliabilityScore: 0 } });
+
+  return { settled };
+}
+
+let timer = null;
+let bootTimer = null;
+let inFlight = null;
+
+/**
+ * Runs every step. Safe to call repeatedly, and safe to run on more than one
+ * instance at once — each step claims its rows before acting on them.
+ */
+export async function runLifecycle() {
+  // Only one pass at a time in this process. A slow run overlapping the next
+  // tick meant two passes racing each other for no benefit.
+  if (inFlight) return inFlight;
+
+  inFlight = (async () => {
+    const now = new Date();
+    const started = Date.now();
+    const runId = randomUUID();
+
+    // Each step is isolated: one failing must not stop the others.
+    const results = { runId };
+    for (const [name, fn] of Object.entries({
+      complete: completeFinishedBookings,
+      expire: expireStaleRequests,
+      remind: sendReminders,
+      reliability: settleReliability,
+    })) {
+      try {
+        Object.assign(results, await fn(now, runId));
+      } catch (err) {
+        console.error(`[lifecycle] ${name} failed:`, err.message);
+        results[`${name}Error`] = err.message;
+      }
+    }
+
+    results.ms = Date.now() - started;
+    return results;
+  })();
+
+  try { return await inFlight; }
+  finally { inFlight = null; }
+}
+
+/** Starts the in-process scheduler. */
+export function startLifecycleScheduler(intervalMinutes = 15) {
+  if (timer) return timer;
+
+  const tick = async () => {
+    try {
+      const r = await runLifecycle();
+      if (r.completed || r.expired || r.reminders || r.settled) {
+        console.log('[lifecycle]', JSON.stringify(r));
+      }
+    } catch (err) {
+      // A rejection from an unawaited timer callback would take the process
+      // down as an unhandled rejection.
+      console.error('[lifecycle] tick failed:', err.message);
+    }
+  };
+
+  // A short delay on boot so the first run does not fight startup.
+  bootTimer = setTimeout(tick, 20_000);
+  if (bootTimer.unref) bootTimer.unref();
+  timer = setInterval(tick, intervalMinutes * 60_000);
+  // Do not hold the process open on shutdown.
+  if (timer.unref) timer.unref();
+  return timer;
+}
+
+/**
+ * Stops the scheduler and waits for any pass already running.
+ *
+ * Clearing the interval alone left the boot timeout armed — a shutdown inside
+ * the first 20 seconds still fired a lifecycle pass at a closing database —
+ * and returned while a pass was mid-refund.
+ */
+export async function stopLifecycleScheduler() {
+  if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+  if (timer) { clearInterval(timer); timer = null; }
+  if (inFlight) { try { await inFlight; } catch { /* already logged */ } }
+}

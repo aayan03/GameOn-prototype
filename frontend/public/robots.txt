@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Private areas — no value in an index, and they need a session anyway.
+Disallow: /admin
+Disallow: /owner
+Disallow: /wallet
+Disallow: /bookings
+Disallow: /profile
+Disallow: /loyalty
+Disallow: /teams
+
+Sitemap: https://gameon.app/sitemap.xml

@@ -1,0 +1,36 @@
+# Render blueprint. Import the repo and Render reads this.
+# The database is Atlas — see DEPLOY.md.
+services:
+  - type: web
+    name: gameon-api
+    runtime: node
+    rootDir: backend
+    plan: starter
+    # `npm ci` needs a committed package-lock.json. Falling back to `npm
+    # install` means a fresh clone of this repo deploys without one.
+    buildCommand: npm ci --omit=dev || npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: LOG_LEVEL
+        value: combined
+      # generateValue creates a strong secret once and keeps it.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # These must be set by hand — Render cannot invent them.
+      - key: MONGO_URI
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false

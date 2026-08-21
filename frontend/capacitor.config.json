@@ -1,0 +1,21 @@
+{
+  "appId": "app.gameon.mobile",
+  "appName": "GameOn",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": { "allowMixedContent": false },
+  "ios": { "contentInset": "always", "limitsNavigationsToAppBoundDomains": true },
+  "server": { "androidScheme": "https", "iosScheme": "https" },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 900,
+      "launchAutoHide": false,
+      "backgroundColor": "#16162BFF",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    },
+    "StatusBar": { "style": "DARK", "backgroundColor": "#16162B" },
+    "Keyboard": { "resize": "body", "resizeOnFullScreen": true },
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+  }
+}

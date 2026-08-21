@@ -1,0 +1,369 @@
+# Deploying GameOn
+
+Backend and frontend deploy separately. The whole connection between them is
+one environment variable on each side.
+
+Reference stack (all have usable free tiers): **MongoDB Atlas** for the
+database, **Render** for the API, **Vercel** for the site.
+
+---
+
+## Before you deploy — read this
+
+Two things in this repository are deliberately not production-ready, and both
+will cause you real problems if you ship them as-is.
+
+**1. The Lucknow venue listings are unverified.**
+`backend/src/seed/lucknow.js` contains 22 real Lucknow business names taken from
+public directory listings. Their prices, opening hours, court configurations and
+coordinates are plausible placeholders, not quoted facts. No reviews were
+invented for them and every entry is marked `isClaimed: false`, which makes the
+UI show an "Unclaimed listing" badge and a warning on the venue page.
+
+Before you launch publicly you must either contact each venue and confirm the
+details, or seed without them:
+
+```bash
+npm run seed:demo      # demo venues only, no real business names
+```
+
+Publishing invented prices under a real business's name is how you end up with
+angry venue owners and players who turn up to a rate that does not exist.
+
+**1b. Pay-at-venue needs someone to press the button.**
+A pay-at-venue booking takes no money online, so nothing knows the cash arrived
+until the owner records it — *Booking requests → Confirmed → Mark ₹N collected*.
+Until they do, that revenue is missing from the owner's charts and the player
+cannot leave a review. Tell your venue owners this exists, or they will wonder
+where their numbers went.
+
+**2. Payments need keys before they are real.**
+Razorpay is fully implemented, behind a feature flag. Set `RAZORPAY_KEY_ID`,
+`RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET` and the gateway goes live —
+no code change. Leave them empty and the wallet simulation runs, and the
+card/UPI endpoints return 501 rather than pretending to verify signatures they
+have no secret for.
+
+What still needs your attention even with keys set:
+- `/api/bookings/wallet/topup` still mints balance with no settlement behind
+  it. It is capped at ₹25,000/day per account and rate-limited, but it is a
+  faucet. Delete it, or wire it to a real Razorpay order, before launch.
+- Register the webhook at `https://your-api/api/payments/webhook` for the
+  `payment.captured` and `payment.failed` events.
+- Refunds currently return to the GameOn wallet. If you want money to go back
+  to the original card, call `refundPayment()` from `services/payment.service.js`
+  in the cancellation path — the function is written and waiting.
+
+---
+
+## 1. Database — MongoDB Atlas
+
+1. Create a free M0 cluster at <https://www.mongodb.com/atlas>
+2. **Database Access** → add a user with a strong generated password
+3. **Network Access** → add your API host's IP. `0.0.0.0/0` works but means
+   anyone with the credentials can connect from anywhere — prefer the real range
+4. Copy the connection string and append the database name:
+
+```
+mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/gameon?retryWrites=true&w=majority
+```
+
+The indexes (geo, unique slot, text search) are created automatically by
+Mongoose on first connection.
+
+---
+
+## 2. Generate secrets
+
+Run this twice and keep the two values separate:
+
+```bash
+openssl rand -base64 48
+```
+
+The server will refuse to boot in production if either secret is missing, under
+32 characters, still the example value, or identical to the other one. That is
+intentional — a default JWT secret means anyone who has read this repo can mint
+an admin token.
+
+---
+
+## 3. Backend — Render
+
+**New → Web Service**, point it at your repository.
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `backend` |
+| Build command | `npm ci` |
+| Start command | `npm start` |
+| Health check path | `/api/health` |
+
+Environment variables:
+
+```
+NODE_ENV=production
+MONGO_URI=<your Atlas string>
+JWT_SECRET=<first generated secret>
+JWT_REFRESH_SECRET=<second generated secret>
+JWT_EXPIRES_IN=2h
+JWT_REFRESH_EXPIRES_IN=30d
+CORS_ORIGINS=https://your-site.vercel.app,capacitor://localhost
+TRUST_PROXY=true
+LOG_LEVEL=combined
+```
+
+`TRUST_PROXY=true` matters on Render: without it every request appears to come
+from the load balancer, and per-IP rate limiting becomes one shared bucket for
+the entire internet.
+
+Seed the production database once, from your machine, with `MONGO_URI` pointing
+at Atlas:
+
+```bash
+cd backend
+MONGO_URI="<atlas string>" npm run seed:demo
+```
+
+---
+
+## 4. Frontend — Vercel
+
+**Add New → Project**, import the same repository.
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `frontend` |
+| Framework preset | Vite |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+
+Environment variable:
+
+```
+VITE_API_URL=https://your-api.onrender.com
+```
+
+No trailing slash — the API client appends `/api` itself.
+
+SPA routing: Vercel handles this for Vite automatically. On any host that does
+not, add a rewrite sending all paths to `/index.html`, or a deep link like
+`/teamup/abc123` will 404 on refresh.
+
+---
+
+## 5. Close the loop
+
+Once the frontend has a real URL, set `CORS_ORIGINS` on the backend to exactly
+that origin and redeploy. Then verify:
+
+```bash
+curl https://your-api.onrender.com/api/health
+# → {"success":true,"data":{"status":"up",...}}
+```
+
+Then in a browser: sign up, book a slot, cancel it, check the refund landed in
+the wallet, and confirm the loyalty points moved.
+
+---
+
+## Upgrading a database that already has data
+
+If you are deploying over a database seeded before venue moderation existed,
+run this once. Venue documents written earlier have no `moderationStatus`
+field, and while the read queries are written to tolerate that
+(`$nin: ['pending','rejected']` matches missing fields), backfilling makes the
+state explicit rather than implied:
+
+```js
+// mongosh, against your database
+db.venues.updateMany(
+  { moderationStatus: { $exists: false } },
+  { $set: { moderationStatus: 'approved' } }
+);
+```
+
+Approving a venue that is awaiting review:
+
+```js
+db.venues.updateOne(
+  { _id: ObjectId('...') },
+  { $set: { moderationStatus: 'approved', isActive: true } }
+);
+```
+
+Marking a venue owner as verified, so their future listings publish immediately:
+
+```js
+db.users.updateOne({ email: 'owner@example.com' }, { $set: { isVerified: true } });
+```
+
+**There is now an admin UI for all of this** at `/admin` — moderation queue,
+owner verification, account suspension, platform stats, ledger and the payout
+runner. The commands above are the fallback for bootstrapping your first admin,
+because the `admin` role is deliberately not assignable through any API:
+
+```js
+db.users.updateOne({ email: 'you@example.com' }, { $set: { role: 'admin' } });
+```
+
+Run that once, log out and back in, and `/admin` appears in the nav.
+
+---
+
+## Security checklist
+
+Everything below is already implemented. It is listed so you can verify it
+rather than take it on faith.
+
+### Authentication
+- [x] Passwords hashed with bcrypt (cost 10), never returned by any query
+- [x] Minimum 8 characters with a letter and a number
+- [x] Access tokens short-lived (2h); refresh tokens separate secret and type
+- [x] `tokenVersion` on the user — changing a password retires every existing
+      token, so "signed out everywhere" is true rather than cosmetic
+- [x] JWT verification pins the algorithm (`HS256`), issuer and audience, so a
+      token cannot be re-signed with `alg: none`
+- [x] A refresh token presented as a bearer token is rejected
+- [x] Per-account lockout after 8 failed logins (15 minutes)
+- [x] Login timing and message are identical for unknown and wrong-password
+      accounts, so the endpoint cannot enumerate registered emails
+- [x] `admin` is not an assignable role at registration
+
+### Input handling
+- [x] Every endpoint validated with Zod; `.strict()` on all write schemas, so
+      unknown keys are rejected rather than silently assigned
+- [x] Mongo operators (`$ne`, `$gt`, `$where`) and dotted paths stripped from
+      every body, param and query — the classic NoSQL auth bypass is dead
+- [x] `__proto__` / `constructor` / `prototype` keys stripped (prototype pollution)
+- [x] All user input escaped before entering a `RegExp` (ReDoS and filter bypass)
+- [x] Repeated query parameters collapsed (HTTP parameter pollution)
+- [x] Request bodies capped at 256 KB
+
+### Authorisation
+- [x] Ownership checked on every venue, booking, team and TeamUp mutation
+- [x] Object ids validated before use, so a crafted id cannot become a query
+- [x] Teams are readable only by their members
+- [x] Join-request lists are visible only to the host
+- [x] Team invite codes are `crypto.randomBytes`, not sequential or derivable
+- [x] An invite addressed to an email can only be redeemed by that email
+
+### Money and integrity
+
+Phase 5 added five more to this list, all found by auditing the Phase 5 fixes
+themselves rather than the code they were fixing:
+
+- [x] Cash taken at the gate is never refunded as wallet credit. Once the owner
+      marks a pay-at-venue booking settled, `refundFor` returns `at_venue` and
+      pays nothing — the venue has the notes, so refunding from the platform
+      would have minted the money a second time
+- [x] `pointsAwarded` is written to one row of a booking group, not copied onto
+      every row. Cancelling a 3-slot booking used to claw back 3× what it gave
+- [x] The review bonus is claimed once per venue for good (`reviewBonusVenues`
+      on the user). Awarding on create and revoking on delete looked fairer but
+      was a faucet: revoke can only take back *unspent* points, so
+      post → redeem → delete → repost paid out on every cycle
+- [x] `loyalty.revoke` clamps inside the database. Read-then-write let two
+      overlapping revokes each subtract the full balance and leave it negative
+- [x] The expiry job credits the wallet before recording the refund, and reads
+      the whole booking group after claiming it rather than the partial slice
+      the time-window query returned
+
+Every one of these was a real bug found during an adversarial review of this
+codebase, not a hypothetical. They are listed because knowing *which* mistakes
+were made is more useful than a claim that none were.
+
+- [x] Wallet debits are a single atomic `findOneAndUpdate` whose filter carries
+      the sufficiency check — no read-modify-write race, no negative balances
+- [x] Point redemption and the daily top-up cap are atomic the same way
+- [x] Every payment method except pay-at-venue actually debits the wallet.
+      Marking a booking paid without taking money, then refunding it as wallet
+      credit, was a money printer
+- [x] `payment.amountPaid` records what was really taken; a refund can never
+      exceed it, and it is written in the same operation that marks rows paid
+- [x] Cancellation flips every row in one conditional update and refunds only
+      if that update modified something — parallel cancels used to each pay out
+- [x] Confirming an assisted booking is equally conditional, so a confirm racing
+      a cancel cannot re-lock a released slot after the refund went out
+- [x] Points already spent are deducted from the refund, so redeem-then-cancel
+      cannot convert a free booking into free credit
+- [x] Double booking prevented by a unique partial index, not application logic
+- [x] A failed multi-slot write deletes the whole group, so no orphaned locks
+- [x] TeamUp spot claims use `$expr` filters and `$elemMatch`, so a game cannot
+      be over-filled and one request cannot be accepted twice
+- [x] Cost settlement claims the right atomically, refuses cancelled games, and
+      charges each player the share they agreed to when they joined
+- [x] Cost shares are capped, and bounded by the linked booking's real total
+- [x] Host loyalty bonus is granted once per post, only when a player actually
+      joins, capped per day, and revoked if the game is cancelled or emptied
+- [x] Promo codes count cancelled bookings, so book-and-cancel cannot reset a
+      first-booking offer that refunds in full
+- [x] Manual venues take no payment until the owner confirms
+- [x] Failed transfers are reversed rather than silently losing money
+
+### Abuse and moderation
+- [x] Anyone can sign up as an "owner", so listings from unverified accounts are
+      held at `moderationStatus: 'pending'` and hidden from discovery,
+      availability and city counts until reviewed
+- [x] Owners cannot activate their own unapproved venue, or set
+      `moderationStatus`, `isVerified` or `isFeatured` on it
+- [x] Venue owners' registration email and phone are never served publicly
+- [x] Team invites do not reveal whether an email is registered, or whose it is
+- [x] `?mine=` views require a session rather than silently returning everything
+- [x] Demo seeding refuses to run against production
+
+### Transport and headers
+- [x] Helmet with a real CSP: `frame-ancestors 'none'`, `object-src 'none'`
+- [x] HSTS with preload in production
+- [x] CORS allow-list enforced in production; never allow-all
+- [x] `x-powered-by` removed
+- [x] Rate limits: global, auth, registration, writes, content creation
+- [x] Stack traces never returned in production
+
+### Configuration
+- [x] Server refuses to boot in production with default or weak secrets
+- [x] `.env` is gitignored; `.env.example` carries no real values
+- [x] `TRUST_PROXY` is opt-in, so `X-Forwarded-For` cannot be spoofed off-proxy
+
+### Still on you
+
+These are genuine gaps, not paperwork. The first four matter before you take a
+single real rupee.
+
+- [ ] **Set the Razorpay keys and delete the demo top-up.** The gateway is
+      implemented; it just needs credentials. `/wallet/topup` remains a faucet
+      until you remove it or back it with a real order.
+- [ ] **Verify or remove the unclaimed Lucknow listings.** See the top of this file.
+- [ ] **Add email verification.** Anyone can register with any address today,
+      which is what makes owner listings need manual review.
+- [ ] **Promote your first admin.** The `admin` role cannot be self-assigned
+      anywhere in the API — set it once in the database (command above).
+- [ ] Rotate `JWT_SECRET` and `JWT_REFRESH_SECRET` if they are ever exposed
+- [ ] Restrict the Atlas IP allow-list to your API host
+- [ ] Change the demo account passwords, or delete those accounts entirely
+- [ ] Set up backups on Atlas (the free tier has none by default)
+- [ ] Add error monitoring (Sentry or similar) — right now a 500 is only a log line
+- [ ] Decide how long a manual venue gets to answer. The lifecycle job expires
+      an unanswered request 2 hours before kickoff, and never sooner than 45
+      minutes after it was made (`MIN_REQUEST_AGE_MS` in
+      `services/lifecycle.service.js`). Both numbers are guesses about your
+      venues, not laws.
+- [ ] Run the lifecycle job somewhere it cannot be missed. It currently runs
+      in-process every 15 minutes. Each step claims its rows before acting, so
+      running several API instances is safe — but if every instance is asleep
+      (Render free tier), nothing completes, expires or reminds. A cron hitting
+      `POST /api/admin/lifecycle` is the fix.
+
+---
+
+## Cost at launch
+
+| | Free tier | When you outgrow it |
+| --- | --- | --- |
+| Atlas M0 | 512 MB storage | ~$9/mo for M2 |
+| Render | Sleeps after 15 min idle | $7/mo to stay warm |
+| Vercel | 100 GB bandwidth | $20/mo Pro |
+| OpenStreetMap tiles | Free | Consider a paid tile host above heavy usage |
+
+Render's free tier sleeping is worth knowing about: the first request after idle
+takes 30–50 seconds. Fine for a demo, not for a launch.
