@@ -132,6 +132,8 @@ console.log('\n── env vars pasted into a dashboard ──');
   ok('the password is masked in that message', /replace\(\/:\[\^:@\/\]\*@\/, ':\*\*\*\*@'\)/.test(e));
   ok('a left-in <placeholder> is caught', /still contains a <placeholder>/.test(e));
   ok('a placeholder hostname is caught', /placeholder hostname \(xxxxx/.test(e));
+  ok('placeholder text in a secret is caught', /looks like placeholder text, not a value/.test(e));
+  ok('CRON_SECRET is cleaned too', /CRON_SECRET: clean\(process\.env\.CRON_SECRET\)/.test(e));
 }
 
 console.log('\n── free-tier realities: cold starts and preview URLs ──');
@@ -161,11 +163,19 @@ console.log('\n── the free-tier scheduler hook ──');
   ok('the secret is compared in constant time', /timingSafeEqual/.test(c));
   ok('both sides are hashed first, so length does not leak', (c.match(/createHash\('sha256'\)/g) || []).length === 2);
   ok('GET is accepted too (free schedulers only send GETs)', /router\.get\('\/lifecycle', handler\)/.test(c));
-  ok('CRON_SECRET defaults to empty', /CRON_SECRET: process\.env\.CRON_SECRET \|\| ''/.test(src('src/config/env.js')));
+  // clean() returns '' for an unset value, so the default still holds.
+  ok('CRON_SECRET defaults to empty', /CRON_SECRET: clean\(process\.env\.CRON_SECRET\)/.test(src('src/config/env.js')));
   ok('the route is mounted', /router\.use\('\/cron', cronRoutes\)/.test(src('src/routes/index.js')));
 
   const r = readFileSync(path.join(here, '..', '..', 'render.yaml'), 'utf8');
   ok('render uses the free plan', /plan: free/.test(r));
+
+  ok('the seed is importable, not CLI-only', /export async function seedDatabase/.test(src('src/seed/seed.js')));
+  ok('the CLI only runs when invoked directly', /endsWith\('seed\.js'\)/.test(src('src/seed/seed.js')));
+  ok('the seed endpoint needs the cron secret', /router\.post\('\/seed', asyncHandler\(async \(req, res\) => \{\s*\n\s*authorise\(req\);/.test(c));
+  ok('it refuses a non-empty database', /Refusing to seed: the database is not empty/.test(c));
+  ok('it never seeds real business listings', /seedDatabase\(\{ noLucknow: true/.test(c));
+  ok('it says the demo passwords are public', /published in this repository/.test(c));
 }
 
 console.log('\n── the stack actually deploys ──');

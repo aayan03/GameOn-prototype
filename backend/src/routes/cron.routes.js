@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { runLifecycle } from '../services/lifecycle.service.js';
+import { Venue, User, Booking } from '../models/index.js';
+import { seedDatabase } from '../seed/seed.js';
 import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -53,5 +55,52 @@ const handler = asyncHandler(async (req, res) => {
 
 router.post('/lifecycle', handler);
 router.get('/lifecycle', handler);
+
+/**
+ * POST /api/cron/seed — populate an EMPTY database with demo data.
+ *
+ * This exists for a specific, real situation: seeding normally runs from a
+ * laptop, and a network whose DNS refuses SRV lookups cannot resolve an
+ * Atlas `mongodb+srv://` host at all — while this server, already connected
+ * to that same cluster, can. Rather than debug someone's ISP, run it here.
+ *
+ * Three things keep a seeding endpoint from being a liability:
+ *  - it needs the cron secret, like every other route in this file
+ *  - it refuses outright if the database holds ANY venue, user or booking,
+ *    so it can only ever fill an empty database and can never wipe real data
+ *  - it never seeds the real Lucknow business listings
+ */
+router.post('/seed', asyncHandler(async (req, res) => {
+  authorise(req);
+
+  const [venues, users, bookings] = await Promise.all([
+    Venue.estimatedDocumentCount(),
+    User.estimatedDocumentCount(),
+    Booking.estimatedDocumentCount(),
+  ]);
+
+  if (venues || users || bookings) {
+    throw ApiError.conflict(
+      `Refusing to seed: the database is not empty (${venues} venues, ${users} users, `
+      + `${bookings} bookings). Seeding clears collections, so this only ever runs once, `
+      + 'on an empty database.'
+    );
+  }
+
+  const summary = await seedDatabase({ noLucknow: true, connect: false });
+
+  // Said plainly in the response, because these passwords are in a public
+  // repository and anyone who has read it can now log into this deployment.
+  console.warn('[seed] demo accounts created with published passwords — change or delete them');
+
+  return ok(res, {
+    ...summary,
+    warning: 'Demo accounts use passwords published in this repository. Change or delete them before this handles anything real.',
+    logins: {
+      player: 'aayan@gameon.app / player123',
+      owner: 'shivanshu@gameon.app / owner123',
+    },
+  });
+}));
 
 export default router;

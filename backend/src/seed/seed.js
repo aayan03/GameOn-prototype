@@ -17,8 +17,6 @@ import { LOYALTY } from '../config/constants.js';
 import { tierFor } from '../services/loyalty.service.js';
 
 const args = process.argv.slice(2);
-const noLucknow = args.includes('--no-lucknow');
-const lucknowOnly = args.includes('--lucknow-only');
 
 const COMMENTS = [
   'Great surface, lights are bright enough for night games.',
@@ -34,21 +32,20 @@ async function insertVenue(v, ownerId) {
   return Venue.create({ ...rest, owner: ownerId, location: { type: 'Point', coordinates: [lng, lat] } });
 }
 
-async function run() {
-  // The demo accounts share published passwords. Seeding them into a live
-  // database hands anyone who has read this repository a working login on
-  // accounts holding wallet balances.
-  if (process.env.NODE_ENV === 'production' && !args.includes('--force')) {
-    console.error('\n❌ Refusing to seed demo accounts in production.');
-    console.error('   The demo logins use shared, published passwords.');
-    console.error('   Use --lucknow-only for venue data, or --force if you');
-    console.error('   really mean it and will change those passwords.\n');
-    process.exit(1);
-  }
+/**
+ * Populates the database. Exported so it can be run from somewhere other than
+ * a shell — see routes/cron.routes.js, which exists because a local machine
+ * whose DNS refuses SRV lookups cannot reach Atlas at all, while the deployed
+ * API sitting next to it can.
+ *
+ * `connect: false` reuses a connection the caller already has open.
+ */
+export async function seedDatabase({
+  noLucknow = false, lucknowOnly = false, connect = true,
+} = {}) {
+  if (connect) await connectDB();
 
-  await connectDB();
-
-  if (isMemoryDB()) {
+  if (connect && isMemoryDB()) {
     console.log('\n⚠️  Seeding an in-memory database — this data disappears when the');
     console.log('    process exits. Set MONGO_URI in backend/.env to persist it.\n');
   }
@@ -108,11 +105,41 @@ async function run() {
     }
   }
 
+  const summary = {
+    owners: ownerDocs.length + (lucknowCount ? 1 : 0),
+    players: playerDocs.length,
+    demoVenues: demoCount,
+    reviews: reviewCount,
+    lucknowVenues: lucknowCount,
+  };
+
   console.log('\n✅ Seed complete');
-  console.log(`   ${ownerDocs.length + (lucknowCount ? 1 : 0)} owners, ${playerDocs.length} players`);
+  console.log(`   ${summary.owners} owners, ${summary.players} players`);
   console.log(`   ${demoCount} demo venues (${reviewCount} reviews), ${lucknowCount} Lucknow listings`);
 
-  if (lucknowCount) {
+  return summary;
+}
+
+/* ── CLI ─────────────────────────────────────────────────────── */
+
+async function run() {
+  // The demo accounts share published passwords. Seeding them into a live
+  // database hands anyone who has read this repository a working login on
+  // accounts holding wallet balances.
+  if (process.env.NODE_ENV === 'production' && !args.includes('--force')) {
+    console.error('\n❌ Refusing to seed demo accounts in production.');
+    console.error('   The demo logins use shared, published passwords.');
+    console.error('   Use --lucknow-only for venue data, or --force if you');
+    console.error('   really mean it and will change those passwords.\n');
+    process.exit(1);
+  }
+
+  const summary = await seedDatabase({
+    noLucknow: args.includes('--no-lucknow'),
+    lucknowOnly: args.includes('--lucknow-only'),
+  });
+
+  if (summary.lucknowVenues) {
     console.log('\n   ⚠️  The Lucknow entries are real business names taken from public');
     console.log('       listings. Prices, hours and coordinates are NOT verified and no');
     console.log('       reviews were invented for them. Read src/seed/lucknow.js and');
@@ -130,4 +157,7 @@ async function run() {
   process.exit(0);
 }
 
-run().catch((err) => { console.error('❌ Seed failed:', err); process.exit(1); });
+// Only run as a CLI when invoked directly, not when imported.
+if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
+  run().catch((err) => { console.error('❌ Seed failed:', err); process.exit(1); });
+}

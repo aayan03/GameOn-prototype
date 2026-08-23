@@ -56,7 +56,7 @@ const env = {
   // Shared secret for POST /api/cron/lifecycle. Empty = the route 404s, which
   // is the correct default: an unauthenticated endpoint that issues refunds
   // is not something to leave switched on by accident.
-  CRON_SECRET: process.env.CRON_SECRET || '',
+  CRON_SECRET: clean(process.env.CRON_SECRET),
   LOG_LEVEL: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'combined' : 'dev'),
   BODY_LIMIT: process.env.BODY_LIMIT || '256kb',
 };
@@ -111,6 +111,19 @@ export function validateEnv() {
     // it. Percent-encode it, or regenerate one without those characters.
     if (/^mongodb(\+srv)?:\/\/[^/]*<[^>]*>/.test(env.MONGO_URI)) {
       fatal.push('MONGO_URI still contains a <placeholder>. Replace <db_password> with the real password, angle brackets included.');
+    }
+
+    // Instruction text pasted where a value belongs. Angle brackets, spaces
+    // and backticks never appear in a generated secret, and a placeholder
+    // that "works" is worse than one that fails — it looks configured.
+    for (const [name, value] of [
+      ['JWT_SECRET', env.JWT_SECRET],
+      ['JWT_REFRESH_SECRET', env.JWT_REFRESH_SECRET],
+      ['CRON_SECRET', env.CRON_SECRET],
+    ]) {
+      if (value && /[<>`]|\s|openssl|paste|your[-_ ]/i.test(value)) {
+        fatal.push(`${name} looks like placeholder text, not a value. Generate one: openssl rand -hex 32`);
+      }
     }
 
     if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
