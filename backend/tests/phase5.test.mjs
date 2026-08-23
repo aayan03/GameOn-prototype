@@ -83,6 +83,9 @@ console.log('\n── the device never serves one user data to the next ──')
   ok('the worker can be told to drop cached data', /CLEAR_DATA/.test(s));
   ok('no skipWaiting on install', !/\.then\(\(\) => self\.skipWaiting\(\)\)/.test(s));
   ok('the offline static path returns a Response', /status: 504/.test(s));
+  ok('cross-origin requests are never intercepted', /if \(url\.origin !== self\.location\.origin\) return;/.test(s));
+  ok('it does not intercept a cross-origin API', !/&& !isApi\(url\)\) return;/.test(s));
+  ok('"offline" is only claimed when the browser agrees', /navigator\?\.onLine === false/.test(s));
 
   const auth = web('src/context/AuthContext.jsx');
   ok('logout waits for storage nowhere, but restore does', /await storageReady/.test(auth));
@@ -117,6 +120,52 @@ console.log('\n── money that never entered the platform is never refunded �
   ok('push registration never pulls first', !/\$pull: \{ pushTokens: \{ token \} \}\s*\n\s*\);\s*\n\s*await User\.updateOne/.test(src('src/services/notification.service.js')));
   ok('teamup reads carry the session', !/api\.get\('\/teamup', filters, \{ auth: false \}\)/.test(web('src/api/endpoints.js')));
   ok('a late prefill cannot stomp typing', /touched\.current/.test(web('src/components/ReviewModal.jsx')));
+}
+
+console.log('\n── env vars pasted into a dashboard ──');
+{
+  const e = src('src/config/env.js');
+  ok('values are trimmed and unquoted', /const clean = \(v\)/.test(e));
+  ok('MONGO_URI is applied through clean()', /MONGO_URI: clean\(process\.env\.MONGO_URI\)/.test(e));
+  ok('secrets are too', /JWT_SECRET: clean\(process\.env\.JWT_SECRET\)/.test(e));
+  ok('a bad scheme is named at boot, not by mongoose', /must start with "mongodb\+srv:\/\/"/.test(e));
+  ok('the password is masked in that message', /replace\(\/:\[\^:@\/\]\*@\/, ':\*\*\*\*@'\)/.test(e));
+  ok('a left-in <placeholder> is caught', /still contains a <placeholder>/.test(e));
+  ok('a placeholder hostname is caught', /placeholder hostname \(xxxxx/.test(e));
+}
+
+console.log('\n── free-tier realities: cold starts and preview URLs ──');
+{
+  const a = src('src/app.js');
+  ok('CORS supports a wildcard entry', /function originAllowed/.test(a));
+  ok('the wildcard cannot cross a dot', /replace\(\/\\\*\/g, '\[\^\.\]\*'\)/.test(a));
+  ok('a whole-domain wildcard is refused at boot', /wildcards an entire domain/.test(src('src/config/env.js')));
+
+  const c = web('src/api/client.js');
+  ok('requests time out instead of hanging', /REQUEST_TIMEOUT_MS/.test(c) && /controller\.abort\(\)/.test(c));
+  ok('a timeout explains the cold start', /wake the server/.test(c));
+  ok('an unreachable API names CORS and the URL', /check CORS_ORIGINS on the API includes/.test(c));
+  // Only the thrown string matters; the phrase still appears in the comment
+  // explaining why it was removed.
+  ok('the dev-only "port 5000" message is gone', !/'Cannot reach the server\. Is the backend/.test(c));
+  ok('a slow request tells the UI', /gameon:slow-request/.test(c));
+  ok('a good response clears the banner', /gameon:request-ok/.test(c));
+  ok('a non-JSON body is explained, not parsed', /looksLikePage/.test(c));
+  ok('the waking banner exists and is mounted', /WakingBanner/.test(web('src/App.jsx')));
+}
+
+console.log('\n── the free-tier scheduler hook ──');
+{
+  const c = src('src/routes/cron.routes.js');
+  ok('the route 404s with no secret configured', /if \(!expected\) throw ApiError\.notFound/.test(c));
+  ok('the secret is compared in constant time', /timingSafeEqual/.test(c));
+  ok('both sides are hashed first, so length does not leak', (c.match(/createHash\('sha256'\)/g) || []).length === 2);
+  ok('GET is accepted too (free schedulers only send GETs)', /router\.get\('\/lifecycle', handler\)/.test(c));
+  ok('CRON_SECRET defaults to empty', /CRON_SECRET: process\.env\.CRON_SECRET \|\| ''/.test(src('src/config/env.js')));
+  ok('the route is mounted', /router\.use\('\/cron', cronRoutes\)/.test(src('src/routes/index.js')));
+
+  const r = readFileSync(path.join(here, '..', '..', 'render.yaml'), 'utf8');
+  ok('render uses the free plan', /plan: free/.test(r));
 }
 
 console.log('\n── the stack actually deploys ──');

@@ -109,7 +109,17 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;            // never cache a write
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin && !isApi(url)) return;   // let CDNs be
+
+  // Anything on another host is left completely alone.
+  //
+  // This used to make an exception for paths starting with /api, which was
+  // written back when the API was same-origin behind a proxy. Deployed for
+  // real the API lives on its own host — and a service worker sitting in
+  // front of a cross-origin API turns every genuine failure (a CORS refusal,
+  // a sleeping free-tier server, a 500) into "You are offline", which sends
+  // people off to check their wifi while the actual cause goes unreported.
+  // Let those requests through so the app's own error handling sees them.
+  if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -124,7 +134,17 @@ self.addEventListener('fetch', (event) => {
     // from a cache to a different user on a shared device.
     if (url.pathname.startsWith('/api/auth') || url.pathname.startsWith('/api/payments')) return;
     event.respondWith(networkFirstData(request).catch(() => new Response(
-      JSON.stringify({ success: false, error: { message: 'You are offline.' } }),
+      JSON.stringify({
+        success: false,
+        error: {
+          // Only claim the user is offline if the browser agrees. Saying it
+          // when they are plainly online is worse than saying nothing: it
+          // blames them for a server-side problem.
+          message: self.navigator?.onLine === false
+            ? 'You are offline. This page will work again when you reconnect.'
+            : 'Could not reach the server. It may be starting up — try again in a moment.',
+        },
+      }),
       { status: 503, headers: { 'Content-Type': 'application/json' } }
     )));
     return;

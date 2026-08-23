@@ -5,7 +5,10 @@ services:
     name: gameon-api
     runtime: node
     rootDir: backend
-    plan: starter
+    # `free` costs nothing but spins down after 15 minutes idle (~1 min cold
+    # start) and is capped at 750 instance-hours per workspace per month.
+    # `starter` is the paid tier that stays warm.
+    plan: free
     # `npm ci` needs a committed package-lock.json. Falling back to `npm
     # install` means a fresh clone of this repo deploys without one.
     buildCommand: npm ci --omit=dev || npm install --omit=dev
@@ -34,3 +37,7 @@ services:
         sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
+      # Shared secret for the external scheduler that runs the lifecycle job.
+      # Leave it unset and POST /api/cron/lifecycle 404s.
+      - key: CRON_SECRET
+        generateValue: true

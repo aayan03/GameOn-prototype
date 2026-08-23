@@ -6,6 +6,11 @@ one environment variable on each side.
 Reference stack (all have usable free tiers): **MongoDB Atlas** for the
 database, **Render** for the API, **Vercel** for the site.
 
+> **Just want it online for free, as a prototype?** Follow
+> [FREE-HOSTING.md](./FREE-HOSTING.md) instead — same stack, every click
+> spelled out, plus the free-tier limits that will bite you. Come back here
+> when you are taking real money.
+
 ---
 
 ## Before you deploy — read this

@@ -14,14 +14,31 @@ const num = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/**
+ * Cleans a value pasted into a hosting dashboard.
+ *
+ * A shell needs quotes around a connection string; a dashboard field does
+ * not, and stores them as part of the value. `"mongodb+srv://..."` then fails
+ * with "Invalid scheme", which points at the URL rather than at the quote
+ * that is actually wrong. Trailing newlines from a copy-paste do the same.
+ */
+const clean = (v) => {
+  if (typeof v !== 'string') return '';
+  const trimmed = v.trim();
+  const quoted = trimmed.length > 1
+    && ((trimmed.startsWith('"') && trimmed.endsWith('"'))
+      || (trimmed.startsWith("'") && trimmed.endsWith("'")));
+  return quoted ? trimmed.slice(1, -1).trim() : trimmed;
+};
+
 const env = {
   PORT: num(process.env.PORT, 5000),
   NODE_ENV: process.env.NODE_ENV || 'development',
-  MONGO_URI: process.env.MONGO_URI || '',
+  MONGO_URI: clean(process.env.MONGO_URI),
 
-  JWT_SECRET: process.env.JWT_SECRET || 'insecure_dev_secret',
+  JWT_SECRET: clean(process.env.JWT_SECRET) || 'insecure_dev_secret',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '2h',
-  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'insecure_dev_refresh',
+  JWT_REFRESH_SECRET: clean(process.env.JWT_REFRESH_SECRET) || 'insecure_dev_refresh',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
 
   CORS_ORIGINS: (process.env.CORS_ORIGINS || 'http://localhost:5173')
@@ -36,6 +53,10 @@ const env = {
   PLATFORM_COMMISSION_PERCENT: num(process.env.PLATFORM_COMMISSION_PERCENT, 10),
 
   TRUST_PROXY: process.env.TRUST_PROXY === 'true',
+  // Shared secret for POST /api/cron/lifecycle. Empty = the route 404s, which
+  // is the correct default: an unauthenticated endpoint that issues refunds
+  // is not something to leave switched on by accident.
+  CRON_SECRET: process.env.CRON_SECRET || '',
   LOG_LEVEL: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'combined' : 'dev'),
   BODY_LIMIT: process.env.BODY_LIMIT || '256kb',
 };
@@ -54,7 +75,19 @@ export function validateEnv() {
   const warn = [];
 
   if (isProd()) {
-    if (!env.MONGO_URI) fatal.push('MONGO_URI is required in production.');
+    if (!env.MONGO_URI) {
+      fatal.push('MONGO_URI is required in production.');
+    } else if (!/^mongodb(\+srv)?:\/\//.test(env.MONGO_URI)) {
+      // Say what is actually wrong. Mongoose's own "Invalid scheme" message
+      // sends people off checking their cluster name when the real problem is
+      // a stray quote, a leading space, or the wrong value pasted entirely.
+      const head = env.MONGO_URI.slice(0, 24).replace(/:[^:@/]*@/, ':****@');
+      fatal.push(
+        `MONGO_URI must start with "mongodb+srv://" or "mongodb://". Yours starts with "${head}…". `
+        + 'Common causes: quotes around the value, a stray space, or pasting the password '
+        + 'instead of the whole connection string.'
+      );
+    }
 
     for (const [name, value] of [['JWT_SECRET', env.JWT_SECRET], ['JWT_REFRESH_SECRET', env.JWT_REFRESH_SECRET]]) {
       if (INSECURE_DEFAULTS.includes(value)) {
@@ -62,6 +95,22 @@ export function validateEnv() {
       } else if (value.length < 32) {
         fatal.push(`${name} must be at least 32 characters (it is ${value.length}).`);
       }
+    }
+
+    // Placeholder hostnames copied out of documentation. These resolve to
+    // nothing, and the resulting `querySrv ENOTFOUND` points at DNS rather
+    // than at the fact that the host was never real.
+    if (/@(cluster0\.)?(xxxxx|xxxx|yyyyy|abcde|example)\./i.test(env.MONGO_URI)) {
+      fatal.push(
+        'MONGO_URI still has a placeholder hostname (xxxxx / abcde / example). '
+        + 'Copy the real string from Atlas: Clusters → Connect → Drivers.'
+      );
+    }
+
+    // A password with @ : / or # in it breaks the URL long before Mongo sees
+    // it. Percent-encode it, or regenerate one without those characters.
+    if (/^mongodb(\+srv)?:\/\/[^/]*<[^>]*>/.test(env.MONGO_URI)) {
+      fatal.push('MONGO_URI still contains a <placeholder>. Replace <db_password> with the real password, angle brackets included.');
     }
 
     if (env.JWT_SECRET === env.JWT_REFRESH_SECRET) {
@@ -72,6 +121,14 @@ export function validateEnv() {
       fatal.push('CORS_ORIGINS must be set explicitly in production.');
     } else if (env.CORS_ORIGINS.some((o) => o.includes('localhost'))) {
       warn.push('CORS_ORIGINS still contains localhost.');
+    }
+
+    // `https://*.vercel.app` matches every app anyone has ever deployed to
+    // vercel.app. Keep a real prefix in front of the star.
+    for (const o of env.CORS_ORIGINS) {
+      if (/^https?:\/\/\*\./.test(o)) {
+        fatal.push(`CORS_ORIGINS entry "${o}" wildcards an entire domain. Put a prefix before the *, e.g. https://myapp-*.vercel.app`);
+      }
     }
 
     if (!env.TRUST_PROXY) {

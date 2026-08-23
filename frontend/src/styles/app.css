@@ -1693,3 +1693,23 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 @media (prefers-reduced-motion: reduce) {
   .app-bar { animation: none; }
 }
+
+
+/* ── "Waking the server" banner ──────────────────────────────────
+   Free-tier hosts sleep. This says so, rather than leaving a spinner
+   turning with no explanation. */
+.waking-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 2100;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px 16px;
+  background: var(--orange-soft);
+  border-bottom: var(--bw) solid var(--ink);
+  color: var(--ink);
+  font-weight: 700; font-size: .88rem;
+  text-align: center;
+  animation: waking-in .25s var(--spring);
+}
+@keyframes waking-in { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+@media (max-width: 520px) {
+  .waking-banner { font-size: .8rem; padding: 9px 12px; }
+}

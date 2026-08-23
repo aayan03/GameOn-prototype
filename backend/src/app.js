@@ -44,11 +44,36 @@ app.use(helmet({
 }));
 
 /* ── CORS ─────────────────────────────────────────────────────── */
+/**
+ * Does this origin match one of the allowed entries?
+ *
+ * An entry may contain `*`, which matches any run of characters that are not
+ * a dot — so `https://gameon-*.vercel.app` accepts every preview deployment
+ * but nothing on another domain. Vercel and Netlify mint a brand new hostname
+ * for every single deploy, so an exact-match-only list means preview builds
+ * are CORS-blocked forever and only the production URL ever works.
+ *
+ * The dot restriction is the whole point. `https://*.vercel.app` would hand
+ * every app on vercel.app credentialed access to this API; keep a real prefix
+ * in front of the star.
+ */
+function originAllowed(origin, allowed) {
+  for (const entry of allowed) {
+    if (entry === origin) return true;
+    if (!entry.includes('*')) continue;
+    const pattern = entry
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')   // escape regex metacharacters
+      .replace(/\*/g, '[^.]*');                 // ...then let * mean "one label"
+    if (new RegExp(`^${pattern}$`).test(origin)) return true;
+  }
+  return false;
+}
+
 app.use(cors({
   origin(origin, cb) {
     // No Origin header: curl, server-to-server, or a native Capacitor WebView.
     if (!origin) return cb(null, true);
-    if (env.CORS_ORIGINS.includes(origin)) return cb(null, true);
+    if (originAllowed(origin, env.CORS_ORIGINS)) return cb(null, true);
     // Development allows anything so a phone on the LAN can reach the dev
     // server. Production never does — an allow-all CORS policy on a
     // credentialed API is a cross-site request forgery waiting to happen.

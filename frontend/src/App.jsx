@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
+import WakingBanner from './components/WakingBanner.jsx';
 import Navbar from './components/Navbar.jsx';
 import TabBar from './components/TabBar.jsx';
 import Footer from './components/Footer.jsx';
@@ -44,6 +45,7 @@ export default function App() {
         <ToastProvider>
           <ScrollToTop />
           <AppShell />
+          <WakingBanner />
           <div className="app-shell">
             <Navbar />
             <main className="app-main">

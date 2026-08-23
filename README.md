@@ -21,6 +21,8 @@ gameon/
 
 ---
 
+**Hosting it free as a prototype:** [FREE-HOSTING.md](./FREE-HOSTING.md) — Atlas + Render + Vercel, step by step, with the free-tier limits that actually bite.
+
 ## Quick start
 
 You need **Node 18+**. MongoDB is optional — the backend starts an in-memory
