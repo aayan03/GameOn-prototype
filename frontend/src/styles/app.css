@@ -65,16 +65,33 @@
 
 /* Scroll reveal — the .reveal class is added by useReveal() when visible */
 .will-reveal { opacity: 0; transform: translateY(26px); }
-.will-reveal.reveal {
+
+/* Two ways an element gets revealed, and BOTH are needed.
+   `.will-reveal.reveal` is the single-element case: the observer ref and the
+   class sit on the same node.
+   `.reveal .will-reveal` is the group case: the ref is on a grid container and
+   the animated children are inside it. That second rule was missing, so every
+   grid on the home page — near-you venues, the four steps, the three edge
+   cards — stayed at opacity 0 forever. The headings rendered, the space was
+   reserved, and the content was simply invisible. */
+.will-reveal.reveal,
+.reveal .will-reveal {
   opacity: 1; transform: none;
   transition: opacity .6s var(--ease), transform .6s var(--spring);
+  /* Stagger by index (set --i inline on each child). */
+  transition-delay: calc(var(--i, 0) * 70ms);
 }
+
 @media (prefers-reduced-motion: reduce) {
   .will-reveal { opacity: 1; transform: none; }
 }
 
-/* Stagger children by index (set --i inline) */
-.will-reveal.reveal { transition-delay: calc(var(--i, 0) * 70ms); }
+/* Last resort: if JavaScript never runs, or an observer somehow never fires,
+   content must still be readable. Nothing on this site is worth hiding behind
+   an animation that failed. */
+@media (scripting: none) {
+  .will-reveal { opacity: 1; transform: none; }
+}
 
 .floaty { animation: float 5.5s ease-in-out infinite; }
 .wobbly { animation: wobble 2.6s ease-in-out infinite; }

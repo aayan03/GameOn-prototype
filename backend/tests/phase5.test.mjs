@@ -122,6 +122,21 @@ console.log('\n── money that never entered the platform is never refunded �
   ok('a late prefill cannot stomp typing', /touched\.current/.test(web('src/components/ReviewModal.jsx')));
 }
 
+console.log('\n── scroll reveal actually reveals ──');
+{
+  const css = web('src/styles/app.css');
+  // The observer puts .reveal on the CONTAINER while will-reveal sits on the
+  // children, so without a descendant rule every grid stays at opacity 0.
+  ok('a revealed container reveals its children', /\.reveal \.will-reveal/.test(css));
+  ok('the single-element case still works', /\.will-reveal\.reveal,/.test(css));
+  ok('reduced motion shows everything', /prefers-reduced-motion: reduce\)\s*\{\s*\n\s*\.will-reveal \{ opacity: 1/.test(css));
+  ok('content survives with no scripting', /@media \(scripting: none\)/.test(css));
+
+  // Home.jsx must keep the pattern the CSS now supports.
+  const home = web('src/pages/Home.jsx');
+  ok('grids carry the ref, children carry will-reveal', /className="steps" ref=\{stepRef\}/.test(home));
+}
+
 console.log('\n── env vars pasted into a dashboard ──');
 {
   const e = src('src/config/env.js');
