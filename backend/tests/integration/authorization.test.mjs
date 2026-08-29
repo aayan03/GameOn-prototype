@@ -306,3 +306,41 @@ test('the seed endpoint is not reachable without the secret', async () => {
   const res = await post('/api/cron/seed', {});
   assert.equal(res.status, 404);
 });
+
+/* ── Push subscriptions (SSRF) ───────────────────────────────── */
+
+test('a push subscription pointing at an internal host is refused', async () => {
+  const player = await createUser({ role: 'player' });
+
+  // A stored subscription IS the URL the server later POSTs to, so an
+  // unchecked endpoint turns this into a server-side request forgery
+  // primitive with full control of host and scheme.
+  const hostile = [
+    'http://169.254.169.254/latest/meta-data/',   // cloud metadata
+    'http://127.0.0.1:5000/api/admin/stats',      // loopback
+    'http://localhost/internal',
+    'https://attacker.example.com/collect',       // arbitrary external host
+    'file:///etc/passwd',
+    'http://[::1]/',
+  ];
+
+  for (const endpoint of hostile) {
+    const res = await post('/api/notifications/push-token', {
+      token: JSON.stringify({ endpoint, keys: { p256dh: 'x'.repeat(87), auth: 'y'.repeat(22) } }),
+      platform: 'web',
+    }, { token: player.token });
+    assert.equal(res.status, 400, `should refuse ${endpoint}`);
+  }
+});
+
+test('a genuine push endpoint is accepted', async () => {
+  const player = await createUser({ role: 'player' });
+  const res = await post('/api/notifications/push-token', {
+    token: JSON.stringify({
+      endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+      keys: { p256dh: 'x'.repeat(87), auth: 'y'.repeat(22) },
+    }),
+    platform: 'web',
+  }, { token: player.token });
+  assert.equal(res.status, 200);
+});

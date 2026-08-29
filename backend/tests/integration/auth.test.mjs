@@ -288,3 +288,20 @@ test('reset is throttled per account', async () => {
   assert.ok(first.body.data.devResetUrl, 'first request issued a link');
   assert.ok(!second.body.data.devResetUrl, 'the immediate retry did not');
 });
+
+test('forgot-password does not leak account existence through status or timing', async () => {
+  const u = await createUser();
+
+  // Both branches must return the same status. The 503-on-delivery-failure
+  // path could only ever fire for a real account, which made it an oracle.
+  const known = await post('/api/auth/forgot-password', { email: u.email });
+  const unknown = await post('/api/auth/forgot-password', { email: uniqueEmail('ghost') });
+
+  assert.equal(known.status, unknown.status, 'same status for both');
+  assert.equal(known.status, 200);
+  assert.deepEqual(
+    Object.keys(known.body.data).filter((k) => k !== 'devResetUrl').sort(),
+    Object.keys(unknown.body.data).filter((k) => k !== 'devResetUrl').sort(),
+    'same response shape, so the body is not an oracle either',
+  );
+});

@@ -265,27 +265,51 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     expiresMinutes: RESET_TOKEN_MINUTES,
   });
 
-  const result = await email.deliver({ to: user.email, ...message });
-
-  // If the mail could not go out, do not leave a live reset token sitting on
-  // the account for half an hour with nobody holding the link.
-  if (!result.delivered && result.mode === 'error') {
-    await User.updateOne({ _id: user._id }, {
+  /**
+   * Send WITHOUT blocking the response.
+   *
+   * The earlier version awaited delivery, which quietly undid the whole point
+   * of the identical message above. An address with no account returned
+   * immediately; an address with one returned only after a full SMTP
+   * transaction — hundreds of milliseconds to seconds. Anyone could time the
+   * two apart and enumerate which addresses are registered, which is exactly
+   * what `login` goes out of its way to prevent a few functions up.
+   *
+   * Worse, a delivery failure threw 503, and that could only ever happen for
+   * a real account: a different status code, not merely a different latency.
+   *
+   * So both branches now return the same body, the same status, in the same
+   * time, and a failure is dealt with out of band.
+   */
+  const onFailure = () => {
+    // Do not leave a live reset token on the account for half an hour with
+    // nobody holding the link.
+    User.updateOne({ _id: user._id }, {
       $set: { resetTokenHash: null, resetTokenExpires: null },
+    }).catch(() => { /* it will expire on its own */ });
+    logger.error('password reset email failed - token cleared', { userId: String(user._id) });
+  };
+
+  // In development there is no SMTP server, so `deliver` returns synchronously
+  // in console mode and the link is handed straight back — no inbox to check.
+  // That branch does no I/O, so it introduces no timing signal, and it cannot
+  // run in production: validateEnv refuses to boot without SMTP.
+  if (!email.isConfigured()) {
+    const result = await email.deliver({ to: user.email, ...message });
+    return ok(res, {
+      ...sameAnswer,
+      ...(!isProd() && result.mode === 'console' ? { devResetUrl: url } : {}),
     });
-    logger.error('password reset email failed — token cleared', { userId: String(user._id) });
-    throw new ApiError(503, 'We could not send the reset email just now. Please try again in a few minutes.');
   }
 
-  logger.info('password reset requested', { userId: String(user._id), delivery: result.mode });
+  email.deliver({ to: user.email, ...message })
+    .then((result) => {
+      if (!result.delivered) onFailure();
+      else logger.info('password reset sent', { userId: String(user._id) });
+    })
+    .catch(onFailure);
 
-  return ok(res, {
-    ...sameAnswer,
-    // Development convenience only: with no SMTP configured there is no
-    // inbox to check, so the link is handed back directly. isProd() is the
-    // gate, and production refuses to boot without SMTP at all.
-    ...(!isProd() && result.mode === 'console' ? { devResetUrl: url } : {}),
-  });
+  return ok(res, sameAnswer);
 });
 
 /**

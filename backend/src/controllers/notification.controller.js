@@ -62,7 +62,28 @@ export const remove = asyncHandler(async (req, res) => {
 
 /** POST /api/notifications/push-token — register this device. */
 export const addPushToken = asyncHandler(async (req, res) => {
-  await notify.registerPushToken(req.user, req.body.token, req.body.platform || 'web');
+  const platform = req.body.platform || 'web';
+
+  /**
+   * Reject a subscription pointing anywhere but a real push service.
+   *
+   * The send path checks this too, but refusing at the door means a hostile
+   * endpoint is never written to a user document in the first place — and the
+   * caller gets told, rather than silently registering something that will
+   * never be delivered to.
+   *
+   * Without the check this endpoint is an SSRF primitive: the stored blob is
+   * the URL the server later POSTs to, and the client picks it.
+   */
+  if (platform === 'web') {
+    let endpoint = null;
+    try { endpoint = JSON.parse(req.body.token)?.endpoint; } catch { endpoint = null; }
+    if (!endpoint || !push.isAllowedPushEndpoint(endpoint)) {
+      throw ApiError.badRequest('That is not a valid push subscription.');
+    }
+  }
+
+  await notify.registerPushToken(req.user, req.body.token, platform);
   return ok(res, { registered: true });
 });
 
