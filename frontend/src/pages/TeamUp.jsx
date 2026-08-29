@@ -8,7 +8,7 @@ import useDebounce from '../hooks/useDebounce.js';
 import CreateGameModal from '../components/CreateGameModal.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
 import { SPORT_ICONS, SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
-import { relativeTime, prettyDate, minuteLabel } from '../utils/date.js';
+import { relativeTime, prettyDate, minuteLabel, localKey } from '../utils/date.js';
 import {
   IconSearch, IconLocate, IconUsers, IconPin, IconClock,
   IconSparkle, IconCheck, IconClose,
@@ -55,7 +55,7 @@ function GameCard({ post, onJoin, onWithdraw, busy }) {
       <div className="game-meta">
         <span className="row gap-6">
           <IconClock style={{ width: 15, height: 15 }} />
-          {prettyDate(new Date(post.playAt).toISOString().slice(0, 10))} · {timeOfDay(post.playAt)}
+          {prettyDate(localKey(new Date(post.playAt)))} · {timeOfDay(post.playAt)}
           <span className="text-faint">({relativeTime(post.playAt)})</span>
         </span>
         <span className="row gap-6">
@@ -202,7 +202,7 @@ export default function TeamUp() {
     <div className="container section fade-in">
       <div className="between gap-16 wrap page-head">
         <div>
-          <span className="eyebrow">Phase 3 · live</span>
+          <span className="eyebrow">Find players</span>
           <h1 style={{ marginTop: 8 }}>TeamUp</h1>
           <p className="text-soft">
             Short on players? Post your game and fill the gaps. Full team, no opponent?
