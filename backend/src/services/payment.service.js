@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
+import logger from '../utils/logger.js';
 
 /**
  * Payment gateway.
@@ -56,7 +57,7 @@ async function razorpay(path, { method = 'POST', body } = {}) {
   if (!res.ok) {
     // Gateway errors are logged in full but summarised to the caller — the
     // raw body can contain account identifiers.
-    console.error('[razorpay]', res.status, json?.error?.description || text);
+    logger.error('razorpay rejected a request', { status: res.status, reason: json?.error?.description || text?.slice(0, 300) });
     throw new ApiError(502, json?.error?.description || 'The payment gateway rejected this request.');
   }
   return json;

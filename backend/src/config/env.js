@@ -53,6 +53,41 @@ const env = {
   PLATFORM_COMMISSION_PERCENT: num(process.env.PLATFORM_COMMISSION_PERCENT, 10),
 
   TRUST_PROXY: process.env.TRUST_PROXY === 'true',
+
+  // ── Email ─────────────────────────────────────────────────────
+  // SMTP, because every provider speaks it. Without these, password reset
+  // cannot deliver — validateEnv() treats that as fatal in production.
+  SMTP_HOST: clean(process.env.SMTP_HOST),
+  SMTP_PORT: num(process.env.SMTP_PORT, 587),
+  SMTP_USER: clean(process.env.SMTP_USER),
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
+  SMTP_FROM: clean(process.env.SMTP_FROM) || 'GameOn <no-reply@gameon.app>',
+
+  // Where the frontend lives, for links inside emails. Defaults to the first
+  // CORS origin, which is almost always right and saves one more variable to
+  // forget.
+  APP_URL: clean(process.env.APP_URL),
+
+  // ── Web Push ──────────────────────────────────────────────────
+  // Generate a pair once:  npx web-push generate-vapid-keys
+  // Without them the app collects no push subscriptions at all, rather than
+  // collecting them and silently never delivering.
+  VAPID_PUBLIC_KEY: clean(process.env.VAPID_PUBLIC_KEY),
+  VAPID_PRIVATE_KEY: clean(process.env.VAPID_PRIVATE_KEY),
+  VAPID_SUBJECT: clean(process.env.VAPID_SUBJECT) || 'mailto:support@gameon.app',
+
+  // ── Observability ─────────────────────────────────────────────
+  SENTRY_DSN: clean(process.env.SENTRY_DSN),
+  SERVICE_NAME: clean(process.env.SERVICE_NAME) || 'gameon-api',
+  RELEASE: clean(process.env.RELEASE),
+  // Application log level, separate from LOG_LEVEL which is morgan's HTTP format.
+  LOG_LEVEL_APP: clean(process.env.LOG_LEVEL_APP) || '',
+
+  // ── Wallet ────────────────────────────────────────────────────
+  // The simulated top-up mints spendable balance with nothing behind it. In
+  // production that is a money printer unless a real gateway is configured,
+  // so it is off by default and must be turned on deliberately.
+  ALLOW_SIMULATED_TOPUP: process.env.ALLOW_SIMULATED_TOPUP === 'true',
   // Shared secret for POST /api/cron/lifecycle. Empty = the route 404s, which
   // is the correct default: an unauthenticated endpoint that issues refunds
   // is not something to leave switched on by accident.
@@ -60,6 +95,20 @@ const env = {
   LOG_LEVEL: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'combined' : 'dev'),
   BODY_LIMIT: process.env.BODY_LIMIT || '256kb',
 };
+
+/**
+ * The public URL of the frontend, for links inside emails.
+ *
+ * Falls back to the first non-wildcard CORS origin, which is the site itself
+ * in every normal deployment. Deliberately NOT derived from the request's
+ * Origin or Host header: a reset link built from an attacker-supplied header
+ * is a working account-takeover.
+ */
+export function appUrl() {
+  if (env.APP_URL) return env.APP_URL.replace(/\/$/, '');
+  const origin = env.CORS_ORIGINS.find((o) => !o.includes('*') && /^https?:\/\//.test(o));
+  return (origin || 'http://localhost:5173').replace(/\/$/, '');
+}
 
 export const isProd = () => env.NODE_ENV === 'production';
 
@@ -156,6 +205,45 @@ export function validateEnv() {
 
     if (env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {
       warn.push('Razorpay is in TEST mode — no real money will move.');
+    }
+
+    // Email is not optional in production: without it a user who forgets
+    // their password is locked out of their account permanently, because the
+    // reset link is the only way back in.
+    if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASSWORD) {
+      fatal.push(
+        'SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required in production. '
+        + 'Without them password-reset emails cannot be delivered and a locked-out user '
+        + 'has no way back into their account.'
+      );
+    }
+
+    // The reset link has to point somewhere. Guessing it from the Origin
+    // header would let anyone who can reach the API mint a reset link
+    // pointing at a site they control.
+    if (!env.APP_URL && !env.CORS_ORIGINS.some((o) => !o.includes('*'))) {
+      fatal.push('APP_URL must be set in production — it is the base of the links inside password-reset emails.');
+    }
+
+    // The simulated top-up creates spendable balance out of nothing. Allowing
+    // it in production alongside real bookings means anyone can grant
+    // themselves unlimited credit.
+    if (env.ALLOW_SIMULATED_TOPUP) {
+      if (env.RAZORPAY_KEY_ID) {
+        fatal.push('ALLOW_SIMULATED_TOPUP cannot be enabled while a real payment gateway is configured — it would let anyone mint balance next to real money.');
+      } else {
+        warn.push('ALLOW_SIMULATED_TOPUP is on. Wallet balance can be created from nothing. Use this for a demo deployment only.');
+      }
+    }
+
+    // Half a VAPID pair is worse than none: the client subscribes, the
+    // subscription is stored, and nothing can ever be signed to deliver to it.
+    if (Boolean(env.VAPID_PUBLIC_KEY) !== Boolean(env.VAPID_PRIVATE_KEY)) {
+      fatal.push('VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together, or both left empty. Generate a pair: npx web-push generate-vapid-keys');
+    }
+
+    if (!env.SENTRY_DSN) {
+      warn.push('SENTRY_DSN is not set — unexpected errors will only appear in logs.');
     }
   } else {
     if (INSECURE_DEFAULTS.includes(env.JWT_SECRET)) {

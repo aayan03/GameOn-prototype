@@ -3,12 +3,24 @@ import env, { validateEnv } from './config/env.js';
 import { connectDB, disconnectDB, isMemoryDB } from './config/db.js';
 import autoSeed from './seed/autoSeed.js';
 import { startLifecycleScheduler, stopLifecycleScheduler } from './services/lifecycle.service.js';
+import logger from './utils/logger.js';
+import { installProcessHandlers, isEnabled as errorTrackingOn } from './services/errorReporter.service.js';
+import * as email from './services/email.service.js';
+import * as push from './services/push.service.js';
 
 async function start() {
   // Refuses to boot a production server with default secrets or open CORS.
   validateEnv();
 
+  // Catch what escapes everything else, and report it before exiting.
+  installProcessHandlers();
+
   await connectDB();
+
+  // Check the outbound integrations at boot rather than at the moment a user
+  // depends on them. A wrong SMTP password should surface in the deploy log,
+  // not in a support ticket from someone locked out of their account.
+  await email.verifyConnection();
 
   // Dev convenience: an empty in-memory DB gets demo venues automatically.
   if (isMemoryDB()) await autoSeed();
@@ -19,13 +31,19 @@ async function start() {
   // platforms where a long-lived interval is not dependable.
   startLifecycleScheduler(15);
   const server = app.listen(env.PORT, () => {
-    console.log(`\n🏟️  GameOn API running on http://localhost:${env.PORT}`);
-    console.log(`   Environment: ${env.NODE_ENV}`);
-    console.log(`   Health check: http://localhost:${env.PORT}/api/health\n`);
+    logger.info('GameOn API listening', {
+      port: env.PORT,
+      environment: env.NODE_ENV,
+      // A one-line summary of what is actually switched on, so a deploy log
+      // answers "is email working here?" without anyone having to guess.
+      email: email.isConfigured() ? 'smtp' : 'disabled',
+      push: push.isConfigured() ? 'web-push' : 'disabled',
+      errorTracking: errorTrackingOn() ? 'sentry' : 'disabled',
+    });
   });
 
   const shutdown = async (signal) => {
-    console.log(`\n${signal} received — shutting down.`);
+    logger.info('shutting down', { signal });
     // Awaited: a pass may be mid-refund, and closing the connection under it
     // would leave a booking cancelled with the money not yet returned.
     await stopLifecycleScheduler();
@@ -34,7 +52,7 @@ async function start() {
     // close the database. A hard exit here can tear down a request that is
     // halfway through moving money.
     const forced = setTimeout(() => {
-      console.error('Graceful shutdown timed out — exiting.');
+      logger.error('graceful shutdown timed out - exiting');
       process.exit(1);
     }, 15_000);
     forced.unref();
@@ -49,18 +67,11 @@ async function start() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-// A rejected promise or thrown error that reaches here means the process is
-// in an unknown state; log it loudly and let the platform restart us rather
-// than limping along serving requests from a broken server.
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled promise rejection:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught exception:', err);
-  process.exit(1);
-});
+// The unhandledRejection / uncaughtException handlers live in
+// errorReporter.service.js, so a crash is reported before the process exits
+// rather than only reaching a log nobody is watching.
 
 start().catch((err) => {
-  console.error('❌ Failed to start server:', err.message);
+  logger.error('failed to start server', { err });
   process.exit(1);
 });

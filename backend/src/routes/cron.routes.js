@@ -7,6 +7,7 @@ import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok } from '../utils/response.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -91,7 +92,7 @@ router.post('/seed', asyncHandler(async (req, res) => {
 
   // Said plainly in the response, because these passwords are in a public
   // repository and anyone who has read it can now log into this deployment.
-  console.warn('[seed] demo accounts created with published passwords — change or delete them');
+  logger.warn('seed created demo accounts with published passwords - change or delete them');
 
   return ok(res, {
     ...summary,
