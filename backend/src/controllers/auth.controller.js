@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import { User } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -7,12 +8,25 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../servic
 import { ROLES, SPORT_KEYS, SKILL_LEVELS, LOYALTY } from '../config/constants.js';
 import * as loyalty from '../services/loyalty.service.js';
 import { cleanText } from '../utils/sanitize.js';
+import * as email from '../services/email.service.js';
+import { appUrl, isProd } from '../config/env.js';
+import logger from '../utils/logger.js';
 
 // Account lockout: after this many consecutive failures the account is frozen
 // for LOCK_MINUTES. Rate limiting is per-IP; this is per-account, so a
 // distributed guess against one inbox still hits a wall.
 const MAX_FAILED_LOGINS = 8;
 const LOCK_MINUTES = 15;
+
+// A reset link is a bearer credential for an account, so it is short-lived.
+const RESET_TOKEN_MINUTES = 30;
+// One reset email per account per minute. The per-IP limiter does not help
+// here: the target is someone else's inbox, and the requests can come from
+// anywhere.
+const RESET_COOLDOWN_MS = 60_000;
+
+/** Only the hash is ever stored — see the note on User.resetTokenHash. */
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 export const registerSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(60),
@@ -96,7 +110,7 @@ export const login = asyncHandler(async (req, res) => {
   // Same message and roughly the same work whether the account exists or not,
   // so this endpoint can't be used to enumerate registered emails.
   if (!user) {
-    await new Promise((r) => setTimeout(r, 120));
+    await new Promise((r) => { setTimeout(r, 120); });
     throw ApiError.unauthorized('Incorrect email or password');
   }
 
@@ -186,5 +200,138 @@ export const changePassword = asyncHandler(async (req, res) => {
   return ok(res, {
     ...authPayload(user),
     message: 'Password changed. You have been signed out of other devices.',
+  });
+});
+
+/* ── Password reset ──────────────────────────────────────────── */
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email').max(160),
+}).strict();
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(20).max(200),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password is too long')
+    .refine((v) => /[a-zA-Z]/.test(v), 'Password must contain a letter')
+    .refine((v) => /[0-9]/.test(v), 'Password must contain a number'),
+}).strict();
+
+/**
+ * POST /api/auth/forgot-password
+ *
+ * Always answers the same way, whether or not the address has an account.
+ * Saying "no account with that email" turns this into a membership oracle —
+ * anybody could test a list of addresses against it — and undoes the care
+ * taken to make login non-enumerable.
+ */
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email: address } = req.body;
+
+  const sameAnswer = {
+    sent: true,
+    message: 'If that email has a GameOn account, a reset link is on its way. Check your spam folder too.',
+  };
+
+  const user = await User.findOne({ email: address })
+    .select('+resetRequestedAt name email isActive');
+
+  // No account, or a disabled one: stop here, but answer identically.
+  if (!user || !user.isActive) return ok(res, sameAnswer);
+
+  // Per-account cooldown, so this cannot be used to bombard someone's inbox.
+  if (user.resetRequestedAt && Date.now() - user.resetRequestedAt.getTime() < RESET_COOLDOWN_MS) {
+    return ok(res, sameAnswer);
+  }
+
+  // 32 random bytes, base64url. The raw token goes in the email and is never
+  // written down anywhere on our side.
+  const token = crypto.randomBytes(32).toString('base64url');
+  const expires = new Date(Date.now() + RESET_TOKEN_MINUTES * 60_000);
+
+  await User.updateOne({ _id: user._id }, {
+    $set: {
+      resetTokenHash: hashToken(token),
+      resetTokenExpires: expires,
+      resetRequestedAt: new Date(),
+    },
+  });
+
+  const url = `${appUrl()}/reset-password?token=${encodeURIComponent(token)}`;
+  const message = email.passwordResetEmail({
+    name: user.name,
+    url,
+    expiresMinutes: RESET_TOKEN_MINUTES,
+  });
+
+  const result = await email.deliver({ to: user.email, ...message });
+
+  // If the mail could not go out, do not leave a live reset token sitting on
+  // the account for half an hour with nobody holding the link.
+  if (!result.delivered && result.mode === 'error') {
+    await User.updateOne({ _id: user._id }, {
+      $set: { resetTokenHash: null, resetTokenExpires: null },
+    });
+    logger.error('password reset email failed — token cleared', { userId: String(user._id) });
+    throw new ApiError(503, 'We could not send the reset email just now. Please try again in a few minutes.');
+  }
+
+  logger.info('password reset requested', { userId: String(user._id), delivery: result.mode });
+
+  return ok(res, {
+    ...sameAnswer,
+    // Development convenience only: with no SMTP configured there is no
+    // inbox to check, so the link is handed back directly. isProd() is the
+    // gate, and production refuses to boot without SMTP at all.
+    ...(!isProd() && result.mode === 'console' ? { devResetUrl: url } : {}),
+  });
+});
+
+/**
+ * POST /api/auth/reset-password
+ *
+ * Consumes the token, sets the password, and bumps tokenVersion so every
+ * session that existed before the reset is dead — which is the point, if the
+ * reason for the reset is that someone else had the old password.
+ */
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+
+  // Claim the token atomically. Finding the user and then updating leaves a
+  // window where the same link, clicked twice, resets twice — and the second
+  // one could be an attacker replaying a link they intercepted.
+  const user = await User.findOneAndUpdate(
+    {
+      resetTokenHash: hashToken(token),
+      resetTokenExpires: { $gt: new Date() },
+      isActive: true,
+    },
+    { $set: { resetTokenHash: null, resetTokenExpires: null } },
+    { new: true },
+  ).select('+password +resetTokenHash +resetTokenExpires');
+
+  if (!user) {
+    throw ApiError.badRequest('That reset link is invalid or has expired. Please request a new one.');
+  }
+
+  // Assigning to the field runs the pre-save hash hook; a direct update would
+  // store the password in plaintext.
+  user.password = password;
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  user.failedLogins = 0;
+  user.lockedUntil = null;
+  await user.save();
+
+  // Told, not asked. If the reset was not the account holder, this is how
+  // they find out.
+  email.deliver({ to: user.email, ...email.passwordChangedEmail({ name: user.name }) })
+    .catch(() => { /* best effort — the reset itself already succeeded */ });
+
+  logger.info('password reset completed', { userId: String(user._id) });
+
+  return ok(res, {
+    ...authPayload(user),
+    message: 'Password updated. You are signed in, and signed out everywhere else.',
   });
 });

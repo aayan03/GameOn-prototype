@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import validate from '../middleware/validate.js';
 import { protect } from '../middleware/auth.js';
-import { authLimiter, registerLimiter } from '../middleware/rateLimit.js';
+import { authLimiter, registerLimiter, passwordResetLimiter } from '../middleware/rateLimit.js';
 import * as ctrl from '../controllers/auth.controller.js';
 
 const router = Router();
@@ -9,6 +9,12 @@ const router = Router();
 router.post('/register', registerLimiter, validate(ctrl.registerSchema), ctrl.register);
 router.post('/login', authLimiter, validate(ctrl.loginSchema), ctrl.login);
 router.post('/refresh', authLimiter, ctrl.refresh);
+
+// Reset is unauthenticated by definition, so both halves are rate limited.
+// `authLimiter` skips successful requests, which is wrong here — forgot-password
+// answers 200 whether or not the address exists, so every attempt must count.
+router.post('/forgot-password', passwordResetLimiter, validate(ctrl.forgotPasswordSchema), ctrl.forgotPassword);
+router.post('/reset-password', passwordResetLimiter, validate(ctrl.resetPasswordSchema), ctrl.resetPassword);
 
 router.get('/me', protect, ctrl.me);
 router.patch('/me', protect, validate(ctrl.updateMeSchema), ctrl.updateMe);

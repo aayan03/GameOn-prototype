@@ -69,6 +69,22 @@ const userSchema = new mongoose.Schema(
     // what makes "log out everywhere" and post-compromise recovery possible.
     tokenVersion: { type: Number, default: 0 },
 
+    /**
+     * Password reset.
+     *
+     * Only the SHA-256 of the token is stored, never the token itself. A
+     * database dump — or a stray log line, or a backup on someone's laptop —
+     * would otherwise be a list of working "log in as this person" links for
+     * every account with a reset in flight.
+     *
+     * `select: false` so the hash cannot leak through a routine user query.
+     */
+    resetTokenHash: { type: String, default: null, select: false },
+    resetTokenExpires: { type: Date, default: null, select: false },
+    // Throttles reset requests per account, independent of the per-IP limiter,
+    // so one inbox cannot be flooded from a botnet.
+    resetRequestedAt: { type: Date, default: null, select: false },
+
     // Devices registered for push. Capped at five most-recent by the
     // notification service so an old phone cannot accumulate tokens forever.
     pushTokens: [{
@@ -81,6 +97,8 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ lastLocation: '2dsphere' });
+// Reset lookups are by token hash. Sparse, because almost every user has none.
+userSchema.index({ resetTokenHash: 1 }, { sparse: true });
 
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
@@ -99,6 +117,9 @@ userSchema.methods.toPublic = function toPublic() {
   delete o.failedLogins;
   delete o.lockedUntil;
   delete o.pushTokens;      // device tokens are never sent to a client
+  delete o.resetTokenHash;  // never leaves the server, under any circumstance
+  delete o.resetTokenExpires;
+  delete o.resetRequestedAt;
   return o;
 };
 
