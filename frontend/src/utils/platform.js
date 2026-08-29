@@ -175,6 +175,66 @@ export async function registerForPush(onToken, onOpen) {
   }
 }
 
+/* ── Web Push (browser) ──────────────────────────────────────── */
+
+/** VAPID keys travel as base64url; PushManager wants a Uint8Array. */
+function urlBase64ToUint8Array(base64) {
+  const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4))
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const raw = atob(padded);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/**
+ * Subscribes this browser to push, and hands the subscription back for the
+ * server to store.
+ *
+ * Deliberately asks for permission only when the server can actually deliver:
+ * `enabled` comes from the API, and with no VAPID keys configured this returns
+ * without prompting. Asking someone for notification permission you cannot use
+ * spends a permission you only get to ask for once.
+ */
+export async function subscribeToWebPush({ publicKey, enabled }) {
+  if (!enabled || !publicKey) return null;
+  if (isNative()) return null;                       // native uses its own channel
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  if (Notification.permission === 'denied') return null;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+
+    // Reuse an existing subscription rather than churning a new one on every
+    // page load — the server would accumulate a fresh row each time.
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) return JSON.stringify(existing);
+
+    if (Notification.permission === 'default') {
+      const granted = await Notification.requestPermission();
+      if (granted !== 'granted') return null;
+    }
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    return JSON.stringify(subscription);
+  } catch (err) {
+    console.warn('[push] subscribe failed', err);
+    return null;
+  }
+}
+
+/** Drops the browser subscription, so a logout stops the notifications. */
+export async function unsubscribeFromWebPush() {
+  if (isNative() || !('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = await registration.pushManager.getSubscription();
+    await existing?.unsubscribe();
+  } catch { /* best effort */ }
+}
+
 /* ── Hardware back button ────────────────────────────────────── */
 /**
  * Android's back button closes the app by default, even mid-flow. Wiring it to

@@ -5,6 +5,7 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok } from '../utils/response.js';
 import * as notify from '../services/notification.service.js';
+import * as push from '../services/push.service.js';
 
 export const listSchema = z.object({
   unread: z.enum(['true', 'false']).optional(),
@@ -16,7 +17,9 @@ export const markReadSchema = z.object({
 }).strict();
 
 export const pushTokenSchema = z.object({
-  token: z.string().min(8).max(512),
+  // Web Push stores the whole PushSubscription as JSON, which is longer than
+  // a native device token. 2 KB covers both with room to spare.
+  token: z.string().min(8).max(2048),
   platform: z.enum(['web', 'android', 'ios']).optional(),
 }).strict();
 
@@ -70,3 +73,14 @@ export const removePushToken = asyncHandler(async (req, res) => {
   await notify.removePushToken(req.user, token);
   return ok(res, { removed: true });
 });
+
+/**
+ * GET /api/notifications/vapid-key
+ *
+ * The browser needs the server's VAPID public key to create a subscription.
+ * Returns null when push is not configured, so the client can skip asking for
+ * notification permission entirely rather than requesting a permission it
+ * cannot act on.
+ */
+export const vapidKey = asyncHandler(async (req, res) =>
+  ok(res, { publicKey: push.publicKey(), enabled: push.isConfigured() }));

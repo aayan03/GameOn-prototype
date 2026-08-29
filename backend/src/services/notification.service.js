@@ -1,4 +1,6 @@
 import { Notification, User } from '../models/index.js';
+import * as push from './push.service.js';
+import logger from '../utils/logger.js';
 
 /**
  * Notifications.
@@ -35,40 +37,57 @@ const TEMPLATES = {
 export async function notify(userId, type, { title, body, link = '', icon } = {}) {
   if (!userId || !type) return null;
   const t = TEMPLATES[type] || {};
+
+  const payload = {
+    title: (title || t.title || 'GameOn').slice(0, 120),
+    body: String(body || '').slice(0, 400),
+    link: String(link).slice(0, 200),
+    icon: icon || t.icon || '🔔',
+  };
+
+  let doc;
   try {
-    return await Notification.create({
-      user: userId,
-      type,
-      title: (title || t.title || 'GameOn').slice(0, 120),
-      body: String(body || '').slice(0, 400),
-      link: String(link).slice(0, 200),
-      icon: icon || t.icon || '🔔',
-    });
+    doc = await Notification.create({ user: userId, type, ...payload });
   } catch (err) {
-    console.error('[notify] failed', type, err.message);
+    logger.error('notification create failed', { err, type });
     return null;
   }
+
+  // Deliver to the device too. Not awaited and independently caught: a push
+  // service being slow or down must not hold up the booking that triggered
+  // this, and `pushedAt` records that it went out so a retry cannot double-send.
+  push.sendToUser(userId, payload)
+    .then((r) => {
+      if (r?.sent) return Notification.updateOne({ _id: doc._id }, { $set: { pushedAt: new Date() } });
+      return null;
+    })
+    .catch((err) => logger.warn('push fan-out failed', { err, type }));
+
+  return doc;
 }
 
 /** Same notification to several people, in one write. */
-export async function notifyMany(userIds, type, payload = {}) {
+export async function notifyMany(userIds, type, payload_ = {}) {
   const ids = [...new Set((userIds || []).map(String))].filter(Boolean);
   if (!ids.length) return [];
   const t = TEMPLATES[type] || {};
+
+  const payload = {
+    title: (payload_.title || t.title || 'GameOn').slice(0, 120),
+    body: String(payload_.body || '').slice(0, 400),
+    link: String(payload_.link || '').slice(0, 200),
+    icon: payload_.icon || t.icon || '🔔',
+  };
+
+  push.sendToMany(ids, payload).catch((err) => logger.warn('push fan-out failed', { err, type }));
+
   try {
     return await Notification.insertMany(
-      ids.map((user) => ({
-        user,
-        type,
-        title: (payload.title || t.title || 'GameOn').slice(0, 120),
-        body: String(payload.body || '').slice(0, 400),
-        link: String(payload.link || '').slice(0, 200),
-        icon: payload.icon || t.icon || '🔔',
-      })),
+      ids.map((user) => ({ user, type, ...payload })),
       { ordered: false }
     );
   } catch (err) {
-    console.error('[notifyMany] failed', type, err.message);
+    logger.error('bulk notification create failed', { err, type });
     return [];
   }
 }
@@ -89,7 +108,10 @@ export async function markRead(userId, ids) {
  * and so a token that stops working can be pruned without another collection.
  */
 export async function registerPushToken(user, token, platform = 'web') {
-  if (!token || typeof token !== 'string' || token.length > 512) return false;
+  // A Web Push subscription is a JSON object (endpoint URL + two keys), which
+  // routinely runs past the old 512-character cap — so every web subscription
+  // was silently rejected here before it could ever be stored.
+  if (!token || typeof token !== 'string' || token.length > 2048) return false;
 
   // A single conditional push, with no destructive pull in front of it. The
   // old pull-then-push left the device unregistered for the length of a round

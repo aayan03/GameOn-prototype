@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { authApi, notificationApi } from '../api/endpoints.js';
 import { tokenStore } from '../api/client.js';
-import { storageReady, getPushToken, clearPushToken } from '../utils/platform.js';
+import { storageReady, getPushToken, clearPushToken, unsubscribeFromWebPush } from '../utils/platform.js';
 
 const AuthContext = createContext(null);
 
@@ -67,6 +67,9 @@ export function AuthProvider({ children }) {
     try {
       const pushToken = getPushToken();
       if (pushToken) notificationApi.removePushToken(pushToken).catch(() => {});
+      // The browser subscription too, or this device keeps receiving the
+      // previous account's booking notifications after someone else signs in.
+      unsubscribeFromWebPush().catch(() => {});
     } catch { /* best effort — never block a logout */ }
 
     // The service worker caches API responses. On a shared device those are

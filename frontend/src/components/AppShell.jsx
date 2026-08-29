@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { notificationApi } from '../api/endpoints.js';
 import {
   isNative, initSecureStorage, wireBackButton, styleStatusBar,
-  hideSplash, registerForPush,
+  hideSplash, registerForPush, subscribeToWebPush,
 } from '../utils/platform.js';
 import { IconRefresh, IconClose, IconSparkle } from './Icons.jsx';
 
@@ -41,11 +41,31 @@ export default function AppShell() {
 
   // Register for push once there is an account to attach the device to.
   useEffect(() => {
-    if (!isAuthenticated || !isNative()) return;
-    registerForPush(
-      (token, platform) => { notificationApi.addPushToken(token, platform).catch(() => {}); },
-      (link) => navigate(link)
-    );
+    if (!isAuthenticated) return undefined;
+    let cancelled = false;
+
+    if (isNative()) {
+      registerForPush(
+        (token, platform) => { notificationApi.addPushToken(token, platform).catch(() => {}); },
+        (link) => navigate(link)
+      );
+      return undefined;
+    }
+
+    // Web: ask the API whether push is configured at all before prompting.
+    // Requesting notification permission the server cannot act on spends a
+    // permission the browser only lets you ask for once.
+    (async () => {
+      try {
+        const { data } = await notificationApi.vapidKey();
+        if (cancelled || !data.enabled) return;
+        const subscription = await subscribeToWebPush(data);
+        if (cancelled || !subscription) return;
+        await notificationApi.addPushToken(subscription, 'web');
+      } catch { /* notifications are a bonus; never block the app on them */ }
+    })();
+
+    return () => { cancelled = true; };
   }, [isAuthenticated, navigate]);
 
   // Offer install only after the user has had a reason to want it.

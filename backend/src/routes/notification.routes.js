@@ -5,6 +5,11 @@ import { writeLimiter } from '../middleware/rateLimit.js';
 import * as ctrl from '../controllers/notification.controller.js';
 
 const router = Router();
+
+// The VAPID public key is public by definition, and the client needs it
+// before it can subscribe — so this one sits in front of the auth gate.
+router.get('/vapid-key', ctrl.vapidKey);
+
 router.use(protect);
 
 router.get('/', validate(ctrl.listSchema, 'query'), ctrl.list);
