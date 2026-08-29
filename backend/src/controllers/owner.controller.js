@@ -70,7 +70,7 @@ export const calendarSchema = z.object({
 export const blackoutSchema = z.object({
   venueId: z.string().regex(/^[0-9a-fA-F]{24}$/),
   date: z.string().refine(isValidDateKey, 'date must be YYYY-MM-DD'),
-  courtId: z.string().regex(/^[0-9a-fA4-F]{24}$/).optional(),
+  courtId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
   startMinutes: z.number().int().min(0).max(1439).optional(),
   endMinutes: z.number().int().min(1).max(1440).optional(),
   reason: z.string().trim().max(120).optional(),
@@ -330,10 +330,15 @@ export const listPromos = asyncHandler(async (req, res) => {
     .populate('venues', 'name')
     .sort({ createdAt: -1 })
     .lean();
+  // Mirrors Promo.isLive(). This used to omit the validFrom check, so a promo
+  // scheduled to start next week was listed as already live and the owner had
+  // no way to tell it had not begun.
+  const now = new Date();
   return ok(res, promos.map((p) => ({
     ...p,
     isLive: p.isActive
-      && (!p.validTo || new Date(p.validTo) >= new Date())
+      && (!p.validFrom || new Date(p.validFrom) <= now)
+      && (!p.validTo || new Date(p.validTo) >= now)
       && (p.totalUseLimit === null || p.usedCount < p.totalUseLimit),
   })));
 });

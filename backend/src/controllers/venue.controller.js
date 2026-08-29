@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { Venue, Review } from '../models/index.js';
+import mongoose from 'mongoose';
+import { Venue, Review, Booking } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok, created } from '../utils/response.js';
@@ -16,6 +17,13 @@ const csv = z.preprocess(
 
 export const listVenuesSchema = z.object({
   q: z.string().optional(),
+  // Fetch a specific set in one call. The saved-venues screen used to request
+  // each favourite individually, so thirty saved turfs meant thirty round
+  // trips fired in parallel every time the list rendered.
+  ids: z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : v),
+    z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).max(60).optional()
+  ),
   sport: z.string().optional(),
   city: z.string().optional(),
   area: z.string().optional(),
@@ -85,7 +93,14 @@ export const listVenues = asyncHandler(async (req, res) => {
   const limit = f.limit || 12;
   const skip = (page - 1) * limit;
 
-  const match = { isActive: true };
+  // `isActive` alone is not the whole gate. Both flags are set together
+  // today — createVenue leaves an unverified listing inactive, moderateVenue
+  // flips them in step — but public discovery is exactly the place where a
+  // single future path that sets one without the other becomes a stranger's
+  // fake venue collecting real bookings. /map and /meta/cities already filter
+  // on both; this is the one that did not.
+  const match = { isActive: true, moderationStatus: { $nin: ['pending', 'rejected'] } };
+  if (f.ids?.length) match._id = { $in: f.ids.map((id) => new mongoose.Types.ObjectId(id)) };
   if (f.sport) match.sports = f.sport;
   // Every regex below is built from escaped input — see utils/sanitize.js.
   // Interpolating raw user text here would be both a ReDoS and a filter bypass.
@@ -169,6 +184,7 @@ export const listVenues = asyncHandler(async (req, res) => {
 export const mapVenues = asyncHandler(async (req, res) => {
   const f = req.validatedQuery || {};
   const match = { isActive: true, moderationStatus: { $nin: ['pending', 'rejected'] } };
+  if (f.ids?.length) match._id = { $in: f.ids.map((id) => new mongoose.Types.ObjectId(id)) };
   if (f.sport) match.sports = f.sport;
   if (f.city) match['address.city'] = new RegExp(`^${escapeRegex(f.city)}$`, 'i');
 
@@ -277,7 +293,36 @@ export const updateVenue = asyncHandler(async (req, res) => {
   if (venue.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
     throw ApiError.forbidden('You can only edit your own venues');
   }
-  const { lat, lng, isActive, ...rest } = req.body;
+  const { lat, lng, isActive, courts, ...rest } = req.body;
+
+  /**
+   * Replacing the courts array is the one edit that can silently break a
+   * booking that already exists.
+   *
+   * A Booking stores `court` as the subdocument's ObjectId, and both the
+   * availability grid and the unique double-booking index key off it.
+   * Assigning a fresh array mints new ids, so every live booking points at a
+   * court that no longer exists: its slot reads as free, someone else books
+   * it, and two teams turn up for the same pitch — with no index violation to
+   * catch it, because the two rows have different `court` values.
+   *
+   * The same reasoning as updateSettings, which already refuses to re-phase
+   * the slot grid underneath live bookings.
+   */
+  if (courts !== undefined) {
+    const upcoming = await Booking.countDocuments({
+      venue: venue._id, slotLocked: true, endsAt: { $gte: new Date() },
+    });
+    if (upcoming > 0) {
+      throw ApiError.conflict(
+        `You have ${upcoming} upcoming booking${upcoming === 1 ? '' : 's'} at this venue. `
+        + 'Changing the court list would detach them from their court — wait until they are '
+        + 'played or cancelled, or deactivate a single court instead.'
+      );
+    }
+    venue.courts = courts;
+  }
+
   Object.assign(venue, rest);
 
   // An owner may deactivate their own venue, but may not activate one that

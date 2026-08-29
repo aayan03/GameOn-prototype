@@ -50,4 +50,9 @@ teamSchema.pre('validate', function generateSlug(next) {
   next();
 });
 
+// GET /api/teams/mine matches on the members array; POST /api/teams/join
+// looks a code up across every team on the platform.
+teamSchema.index({ 'members.user': 1 });
+teamSchema.index({ 'invites.code': 1 });
+
 export default mongoose.model('Team', teamSchema);

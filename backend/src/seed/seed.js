@@ -28,7 +28,7 @@ const COMMENTS = [
 ];
 
 async function insertVenue(v, ownerId) {
-  const { ownerEmail, lat, lng, ...rest } = v;
+  const { ownerEmail: _ownerEmail, lat, lng, ...rest } = v;
   return Venue.create({ ...rest, owner: ownerId, location: { type: 'Point', coordinates: [lng, lat] } });
 }
 

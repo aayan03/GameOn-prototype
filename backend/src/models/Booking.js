@@ -102,6 +102,16 @@ bookingSchema.index(
   { unique: true, partialFilterExpression: { slotLocked: true } }
 );
 bookingSchema.index({ venue: 1, date: 1, status: 1 });
+// GET /api/bookings — every row for one user, newest first. The single-field
+// `user` index could find the rows but not order them, so Mongo sorted the
+// whole set in memory on every load of the bookings screen.
+bookingSchema.index({ user: 1, startsAt: -1 });
+// The analytics aggregations all match on venue + a startsAt window.
+bookingSchema.index({ venue: 1, startsAt: 1, status: 1 });
+// The lifecycle job's two hot scans: finished-but-not-completed bookings,
+// and pending requests that have gone unanswered.
+bookingSchema.index({ status: 1, endsAt: 1 });
+bookingSchema.index({ status: 1, startsAt: 1, createdAt: 1 });
 
 // Keep slotLocked in step with status so the index frees cancelled slots.
 const RELEASING = ['cancelled', 'rejected', 'expired'];

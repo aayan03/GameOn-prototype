@@ -20,4 +20,9 @@ const transactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// The ledger query: this user's rows, newest first. Without the compound
+// index the sort ran in memory over the user's entire transaction history,
+// which grows without bound.
+transactionSchema.index({ user: 1, createdAt: -1 });
+
 export default mongoose.model('Transaction', transactionSchema);
