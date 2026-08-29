@@ -9,6 +9,8 @@ import { buildAvailability, quoteBooking, refundFor, lookupPromo } from '../serv
 import * as wallet from '../services/wallet.service.js';
 import * as loyalty from '../services/loyalty.service.js';
 import * as notify from '../services/notification.service.js';
+import * as payments from '../services/payment.service.js';
+import env, { isProd } from '../config/env.js';
 import { isValidDateKey, todayKey, toLabel, toDate } from '../utils/time.js';
 import { cleanText } from '../utils/sanitize.js';
 
@@ -161,8 +163,13 @@ export const quote = asyncHandler(async (req, res) => {
     tierKey: req.user.loyaltyTier, userId: req.user._id,
   });
 
+  // `promoDoc` is the whole Promo record — the owner's id, its running
+  // `usedCount`, its global cap. That is internal bookkeeping the quote
+  // endpoint has no business handing to a browser.
+  const { promoDoc: _promoDoc, promoOwner: _promoOwner, ...publicQuote } = q;
+
   return ok(res, {
-    ...q,
+    ...publicQuote,
     courtName: court.name,
     sport: court.sport,
     venueName: venue.name,
@@ -762,6 +769,29 @@ const DAILY_TOPUP_CAP = 25000;
 export const topUpWallet = asyncHandler(async (req, res) => {
   const { amount } = req.body;
   const now = new Date();
+
+  /**
+   * The gate that stops this being a money printer.
+   *
+   * This endpoint creates spendable balance with nothing behind it — no card
+   * charged, no settlement, no reconciliation. That is fine for a demo and
+   * catastrophic on a live site: any account could grant itself unlimited
+   * credit and spend it on real slots at real venues, and the venue would
+   * still be owed real money at payout time.
+   *
+   * So in production it is closed unless someone deliberately opened it, and
+   * `validateEnv` refuses to boot if it is open while a real gateway is
+   * configured. With Razorpay live, the supported path is
+   * POST /api/payments/order → checkout → POST /api/payments/verify.
+   */
+  if (isProd() && !env.ALLOW_SIMULATED_TOPUP) {
+    throw new ApiError(
+      501,
+      payments.isLive()
+        ? 'Top up by paying for a booking directly — card and UPI are enabled on this server.'
+        : 'Wallet top-up is not available on this server.'
+    );
+  }
 
   // Roll the window over first if it has expired. Conditional, so a
   // concurrent request cannot reset it twice.

@@ -241,6 +241,14 @@ export async function quoteBooking({ venue, court, dateKey, starts, promoCode, t
     subtotal,
     discount,
     promoLabel,
+    // The caller needs to know WHOSE promo this was, and which document to
+    // charge the use against. Without these two fields createBooking wrote
+    // `promoOwner: null` on every booking and never incremented `usedCount`,
+    // so an owner promo's per-user limit matched nothing and its global
+    // `totalUseLimit` was never reached — both caps were decorative and the
+    // code could be redeemed without end.
+    promoOwner: promo?.doc?.owner || null,
+    promoDoc: promo?.doc || null,
     grossFee,
     platformFee,
     tierFeeSaved,
