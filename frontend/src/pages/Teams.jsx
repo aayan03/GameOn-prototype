@@ -191,7 +191,10 @@ export default function Teams() {
   const invite = async (team) => {
     setBusy(team._id);
     try {
-      const { data } = await teamApi.invite(team._id, { email: `invite-${Date.now()}@placeholder.local` });
+      // No address: this is the "generate a code and paste it in the group
+      // chat" flow. Sending a made-up placeholder email bound the code to an
+      // account nobody owns, and every redemption was rejected.
+      const { data } = await teamApi.invite(team._id, {});
       setInviteCode({ team: team.name, code: data.code });
     } catch (err) { toast.error(err.message); }
     finally { setBusy(null); }
