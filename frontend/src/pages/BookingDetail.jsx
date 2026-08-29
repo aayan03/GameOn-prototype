@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { bookingApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -44,7 +44,6 @@ function QrBlock({ text, size = 21 }) {
 export default function BookingDetail() {
   const { groupRef } = useParams();
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const { user, setUser } = useAuth();
   const toast = useToast();
 

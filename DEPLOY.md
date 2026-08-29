@@ -143,17 +143,84 @@ MONGO_URI="<atlas string>" npm run seed:demo
 | Build command | `npm run build` |
 | Output directory | `dist` |
 
-Environment variable:
+Environment variables:
 
 ```
 VITE_API_URL=https://your-api.onrender.com
+VITE_SHOW_DEMO_LOGINS=false
 ```
 
-No trailing slash — the API client appends `/api` itself.
+No trailing slash on `VITE_API_URL` — the API client appends `/api` itself.
+
+`VITE_SHOW_DEMO_LOGINS` must stay `false` (or unset) on anything public. The
+demo credentials are published in this repository, and one of them is a venue
+owner with access to that venue's customer names, phone numbers and revenue.
 
 SPA routing: Vercel handles this for Vite automatically. On any host that does
 not, add a rewrite sending all paths to `/index.html`, or a deep link like
 `/teamup/abc123` will 404 on refresh.
+
+### Why the build uses an absolute base path
+
+`vite.config.js` sets `base: '/'` for the web. Do not change it to `'./'`.
+
+A relative base makes `index.html` reference `./assets/index-<hash>.js`. An
+SPA serves that same `index.html` for every route, so a visitor landing on
+`/venues/some-turf` resolves the bundle against `/venues/` and requests
+`/venues/assets/index-<hash>.js`. The rewrite above answers that with
+`index.html` — HTML, with `Content-Type: text/html` — and the browser refuses
+to execute it as a module. The page is blank, with nothing but a MIME error in
+the console. It affects every deep link, every refresh and every shared URL,
+while the home page keeps working, which is what makes it easy to miss.
+
+The native shell is the one case that genuinely needs relative paths, because
+Capacitor loads the bundle off the filesystem with no server in front of it.
+Build that with `npm run cap:build` (or `npm run cap:sync`), which sets
+`VITE_BUILD_TARGET=capacitor`.
+
+---
+
+## 4b. Email — required before launch
+
+The API **refuses to boot in production without SMTP**. That is deliberate:
+password reset is the only route back into a locked-out account, so a
+deployment that cannot send email is one where a forgotten password means a
+lost account, wallet balance and booking history.
+
+Any provider that speaks SMTP works. On Render, set:
+
+```
+SMTP_HOST=smtp.your-provider.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_FROM=GameOn <no-reply@yourdomain.com>
+APP_URL=https://your-site.vercel.app
+```
+
+`APP_URL` is the base of the links inside those emails. It is deliberately not
+derived from the request's `Host` header — a reset link built from an
+attacker-supplied header is a working account takeover.
+
+Credentials are checked once at boot, so a wrong password shows up in the
+deploy log rather than in a support ticket.
+
+### Push notifications (optional)
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` together, or leave both empty.
+With them empty the app never asks for notification permission at all, which
+is the right behaviour — a permission the browser grants once and the server
+cannot act on is a permission wasted.
+
+### Error tracking (optional, strongly recommended)
+
+Set `SENTRY_DSN` and unexpected 500s are reported with the request id that
+also appears in the logs and in the error response. Handled failures — a
+validation error, a declined payment — are not reported; they would be noise.
 
 ---
 
@@ -168,7 +235,24 @@ curl https://your-api.onrender.com/api/health
 ```
 
 Then in a browser: sign up, book a slot, cancel it, check the refund landed in
-the wallet, and confirm the loyalty points moved.
+the wallet, and confirm the loyalty points moved. Finally, run the reset flow
+end to end — "forgot password", open the email, set a new one — because that
+is the path nobody tests until a real customer needs it.
+
+### Before you take real money
+
+- [ ] `ALLOW_SIMULATED_TOPUP` is `false` or unset. The simulated top-up mints
+      spendable balance with nothing behind it; on a live site that is a money
+      printer, and the server refuses to boot with it on while Razorpay is
+      configured.
+- [ ] Razorpay keys are live (`rzp_live_`), not test, and the webhook secret is set.
+- [ ] `VITE_SHOW_DEMO_LOGINS` is `false` on the frontend.
+- [ ] The seeded demo accounts are deleted or re-passworded — their passwords
+      are published in this repository, and one is a venue owner.
+- [ ] Terms and Privacy pages exist and are linked. You are storing names,
+      phone numbers and payment records; India's DPDP Act applies.
+- [ ] `gameon.app` in `sitemap.xml`, `robots.txt` and the Open Graph tags is
+      replaced with your real domain.
 
 ---
 

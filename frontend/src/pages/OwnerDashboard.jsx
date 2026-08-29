@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ownerApi } from '../api/endpoints.js';
-import { useToast } from '../context/ToastContext.jsx';
 import { TrendChart, HourBars, RankedBars, StatTile } from '../components/Charts.jsx';
 import { rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
 import {
@@ -16,7 +15,6 @@ const RANGES = [
 ];
 
 export default function OwnerDashboard() {
-  const toast = useToast();
   const [days, setDays] = useState(30);
   const [venueId, setVenueId] = useState('');
   const [data, setData] = useState(null);

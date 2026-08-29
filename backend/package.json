@@ -8,10 +8,14 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/seed/seed.js",
-    "test": "node tests/load.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs",
+    "test": "npm run test:unit && npm run test:integration",
     "seed:demo": "node src/seed/seed.js --no-lucknow",
     "seed:lucknow": "node src/seed/seed.js --lucknow-only",
-    "check": "node tests/load.test.mjs"
+    "check": "node tests/load.test.mjs",
+    "test:unit": "node tests/load.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs",
+    "test:integration": "node --test \"tests/integration/*.test.mjs\"",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -23,9 +27,13 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.6.0",
     "morgan": "^1.10.0",
+    "nodemailer": "^9.0.6",
+    "web-push": "^3.6.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
     "mongodb-memory-server": "^10.0.0",
     "nodemon": "^3.1.4"
   },

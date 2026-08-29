@@ -53,10 +53,16 @@ export function useToast() {
   // Falling back to console keeps components usable outside the provider
   // (in tests, or a page rendered in isolation).
   if (!ctx) {
+    // Deliberate: outside the provider there is nowhere to render a toast, so
+    // the message goes to the console rather than vanishing. Disabled rather
+    // than left as a standing warning, because a lint that always warns is a
+    // lint people stop reading.
+    /* eslint-disable no-console */
     return {
       toast: console.log, success: console.log, error: console.error,
       info: console.log, dismiss: () => {},
     };
+    /* eslint-enable no-console */
   }
   return ctx;
 }

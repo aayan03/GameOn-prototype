@@ -13,9 +13,11 @@ import {
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
+// Features, not figures. "15,000+ turfs" was in here too — a number the
+// platform cannot stand behind does not belong in the furniture.
 const MARQUEE = [
-  'Instant booking', '15,000+ turfs', 'Free cancellation', 'Split the cost',
-  'Find players nearby', 'No phone tag', 'Live availability', 'Weekend leagues',
+  'Instant booking', 'Live availability', 'Free cancellation', 'Split the cost',
+  'Find players nearby', 'No phone tag', 'Assisted booking', 'Weekend leagues',
 ];
 
 const STEPS = [
@@ -38,6 +40,7 @@ function Stat({ value, suffix, label }) {
 export default function Home() {
   const [query, setQuery] = useState('');
   const [venues, setVenues] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const { coords, request, isLoading: locating } = useGeolocation();
   const navigate = useNavigate();
@@ -57,6 +60,26 @@ export default function Home() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [coords]);
+
+  // Headline figures, from the same source as the listings themselves.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([venueApi.list({ limit: 1 }), venueApi.cities()])
+      .then(([listed, cities]) => {
+        if (cancelled) return;
+        const total = listed.meta?.total || 0;
+        // Nothing to boast about yet — leave the panel out rather than
+        // printing a proud "0 venues listed" across the hero.
+        if (!total) return;
+        setStats({
+          venues: total,
+          cities: cities.data?.length || 0,
+          sports: SPORTS.length,
+        });
+      })
+      .catch(() => { /* the hero renders fine without them */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const submitSearch = (e) => {
     e.preventDefault();
@@ -119,11 +142,24 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="hero-stats">
-            <Stat value={15} suffix="K+" label="turfs & courts" />
-            <Stat value={100} suffix="M+" label="players in India" />
-            <Stat value={2} suffix=" min" label="average booking" />
-          </div>
+          {/*
+            Real numbers, read from the API.
+
+            These were hardcoded to "15K+ turfs" and "100M+ players in India" —
+            the first was untrue for a platform with a few dozen listings, and
+            the second was a market-size figure dressed up as a platform
+            metric. It is the first thing a visitor reads, and a claim you
+            cannot back is the wrong place to start a booking relationship.
+            The venue count now comes from the same endpoint the listings do,
+            and the panel simply does not render until it has a real figure.
+          */}
+          {stats && (
+            <div className="hero-stats">
+              <Stat value={stats.venues} suffix="" label={stats.venues === 1 ? 'venue listed' : 'venues listed'} />
+              <Stat value={stats.cities} suffix="" label={stats.cities === 1 ? 'city' : 'cities'} />
+              <Stat value={stats.sports} suffix="" label="sports covered" />
+            </div>
+          )}
         </div>
       </section>
 
@@ -165,12 +201,17 @@ export default function Home() {
                   </div>
                 ))
               : (
+                // A customer sees this, not a developer. The old copy told
+                // them to check that "the backend is running on port 5000".
                 <div className="card card-pad empty" style={{ gridColumn: '1 / -1' }}>
                   <div className="empty-icon">🏟️</div>
-                  <h3>No venues loaded yet</h3>
-                  <p className="text-soft" style={{ marginTop: 8 }}>
-                    Make sure the backend is running on port 5000 — it seeds demo venues automatically.
+                  <h3>{coords ? 'Nothing open near you right now' : 'No venues to show yet'}</h3>
+                  <p className="text-soft" style={{ marginTop: 8, marginBottom: 18 }}>
+                    {coords
+                      ? 'Try widening your search, or browse every venue we cover.'
+                      : 'We are still adding venues in your area. Have a look at the full list in the meantime.'}
                   </p>
+                  <Link to="/venues" className="btn btn-primary">Browse all venues</Link>
                 </div>
               )}
         </div>

@@ -111,12 +111,21 @@ export default function Register() {
 
           <div className="field">
             <label className="label" htmlFor="r-pass">Password</label>
+            {/* These rules must match auth.controller.js#registerSchema. The
+                form used to advertise "at least 6 characters" while the API
+                required eight plus a letter and a number, so a valid-looking
+                password was accepted by the browser and then rejected by the
+                server with no hint as to which rule it broke. */}
             <input
-              id="r-pass" type="password" className={`input${fieldErrors.password ? ' error' : ''}`} required minLength={6}
+              id="r-pass" type="password" className={`input${fieldErrors.password ? ' error' : ''}`}
+              required minLength={8} maxLength={128} autoComplete="new-password"
               value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
+              aria-describedby="pass-hint"
             />
-            {fieldErrors.password && <span className="field-error">{fieldErrors.password}</span>}
+            {fieldErrors.password
+              ? <span className="field-error">{fieldErrors.password}</span>
+              : <span id="pass-hint" className="text-faint">At least 8 characters, including a letter and a number.</span>}
           </div>
 
           {form.role === 'player' && (

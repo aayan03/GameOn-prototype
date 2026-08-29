@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend — install, load, test
+    name: Backend — lint, unit, integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,20 +19,24 @@ jobs:
         working-directory: backend
         run: npm ci || npm install
 
-      # This is the gate that matters. `node --check` only parses; a module
-      # that throws while EVALUATING passes every syntax check and still takes
-      # the whole API down at boot. See tests/load.test.mjs.
-      - name: Load every module
+      - name: Lint
         working-directory: backend
-        run: node tests/load.test.mjs
+        run: npm run lint
 
+      # `node --check` only parses; a module that throws while EVALUATING
+      # passes every syntax check and still takes the whole API down at boot.
+      # See tests/load.test.mjs.
       - name: Unit tests
         working-directory: backend
-        run: |
-          node tests/booking.test.mjs
-          node tests/loyalty.test.mjs
-          node tests/phase4.test.mjs
-          node tests/phase5.test.mjs
+        run: npm run test:unit
+
+      # The real gate. These boot the app against an in-memory MongoDB and
+      # drive it over HTTP — the middleware chain, the validators, the indexes
+      # and the controllers together. Every bug this project actually shipped
+      # was in that seam, invisible to the unit tests.
+      - name: Integration tests
+        working-directory: backend
+        run: npm run test:integration
 
       - name: Boot check
         working-directory: backend
@@ -52,8 +56,25 @@ jobs:
           curl -sf http://localhost:5000/api/config || (kill $PID; exit 1)
           kill $PID
 
+      # Proves the production guardrails actually refuse to boot. A server
+      # that starts with a default JWT secret is one anybody who has read this
+      # repository can mint an admin token for.
+      - name: Production config guardrails
+        working-directory: backend
+        run: |
+          set +e
+          NODE_ENV=production MONGO_URI=mongodb://localhost:27017/x \
+            JWT_SECRET=insecure_dev_secret JWT_REFRESH_SECRET=insecure_dev_refresh \
+            CORS_ORIGINS=https://example.com \
+            node -e "import('./src/config/env.js').then(m => m.validateEnv())" 2>/dev/null
+          if [ $? -eq 0 ]; then
+            echo "::error::validateEnv accepted insecure production secrets"
+            exit 1
+          fi
+          echo "Refused insecure secrets, as expected."
+
   frontend:
-    name: Frontend — build
+    name: Frontend — lint, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +86,10 @@ jobs:
         working-directory: frontend
         run: npm ci || npm install
 
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
       - name: Build
         working-directory: frontend
         run: npm run build
@@ -72,6 +97,23 @@ jobs:
       - name: Check the bundle was produced
         working-directory: frontend
         run: test -f dist/index.html && test -d dist/assets
+
+      # The bug that made every deep link render a blank page. A relative base
+      # resolves the bundle against whatever path the visitor landed on, so
+      # /venues/some-turf asks for /venues/assets/... and gets the SPA
+      # fallback HTML, which the browser refuses to execute as a module.
+      - name: Assets must be referenced absolutely
+        working-directory: frontend
+        run: |
+          if grep -q 'src="\./assets/' dist/index.html; then
+            echo "::error::dist/index.html uses relative asset paths - deep links will render a blank page. Check the base option in vite.config.js."
+            exit 1
+          fi
+          grep -q 'src="/assets/' dist/index.html || {
+            echo "::error::could not find an absolute asset reference in dist/index.html"
+            exit 1
+          }
+          echo "Asset paths are absolute."
 
   docker:
     name: Docker images build

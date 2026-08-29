@@ -41,3 +41,34 @@ services:
       # Leave it unset and POST /api/cron/lifecycle 404s.
       - key: CRON_SECRET
         generateValue: true
+      # Email is REQUIRED in production — the server refuses to boot without
+      # it, because password reset is the only way back into a locked-out
+      # account. Any SMTP provider works.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Public URL of the frontend, used to build reset links.
+      - key: APP_URL
+        sync: false
+      # Optional. Generate with: npx web-push generate-vapid-keys
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      # Optional but strongly recommended — without it, production errors
+      # only ever reach the log stream.
+      - key: SENTRY_DSN
+        sync: false
+      # The simulated top-up mints balance from nothing. Never true on a
+      # deployment taking real bookings.
+      - key: ALLOW_SIMULATED_TOPUP
+        value: "false"
