@@ -14,12 +14,19 @@
  * online is how people end up with two bookings for the same slot.
  */
 
-const VERSION = 'gameon-v1';
+// Bump this on any change to what is cached or how. `activate` deletes every
+// cache that does not start with the current VERSION, so a bump is the only
+// way to evict entries that are stale rather than merely old.
+const VERSION = 'gameon-v2';
 const SHELL = `${VERSION}-shell`;
 const DATA = `${VERSION}-data`;
-const OFFLINE_URL = './offline.html';
+// Absolute paths throughout. A relative './index.html' resolves against the
+// worker's own URL, which is only ever '/' today — but the moment anything
+// serves the worker from a subdirectory the precache silently caches the
+// wrong URLs and the offline fallback stops matching.
+const OFFLINE_URL = '/offline.html';
 
-const SHELL_ASSETS = ['./', './index.html', './offline.html', './favicon.svg', './manifest.webmanifest'];
+const SHELL_ASSETS = ['/', '/index.html', '/offline.html', '/favicon.svg', '/manifest.webmanifest'];
 
 // How long an API response stays usable offline.
 const DATA_TTL_MS = 10 * 60 * 1000;
@@ -124,7 +131,7 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .catch(async () => (await caches.match(OFFLINE_URL)) || (await caches.match('./index.html')))
+        .catch(async () => (await caches.match(OFFLINE_URL)) || (await caches.match('/index.html')))
     );
     return;
   }
@@ -175,8 +182,8 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(self.registration.showNotification(payload.title || 'GameOn', {
     body: payload.body || '',
-    icon: './icon-192.png',
-    badge: './icon-192.png',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     tag: payload.tag || 'gameon',
     data: { link: payload.link || '/' },
   }));
