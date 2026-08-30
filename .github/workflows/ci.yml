@@ -90,6 +90,14 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      # The frontend had lint and a build gate but no tests at all. These
+      # cover the seams that actually broke: local-vs-UTC date keys, the API
+      # client's error and token-refresh paths, the route guards, and the
+      # counter that must never display a wrong number.
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+
       - name: Build
         working-directory: frontend
         run: npm run build

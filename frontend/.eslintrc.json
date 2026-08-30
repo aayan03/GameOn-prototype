@@ -62,5 +62,30 @@
     "node_modules/",
     "android/",
     "ios/"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "src/**/*.test.{js,jsx}",
+        "src/__tests__/**/*.{js,jsx}",
+        "vitest.config.js"
+      ],
+      "env": {
+        "node": true
+      },
+      "globals": {
+        "describe": "readonly",
+        "test": "readonly",
+        "expect": "readonly",
+        "vi": "readonly",
+        "beforeEach": "readonly",
+        "afterEach": "readonly",
+        "beforeAll": "readonly",
+        "afterAll": "readonly"
+      },
+      "rules": {
+        "no-console": "off"
+      }
+    }
   ]
 }
