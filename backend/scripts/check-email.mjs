@@ -1,125 +1,120 @@
 /**
- * Checks your SMTP credentials before you put them anywhere near Render.
+ * Checks your email setup before you put it anywhere near Render.
  *
- *   node scripts/check-email.mjs                 # just test the connection
- *   node scripts/check-email.mjs you@gmail.com   # ...and send yourself a real one
+ *   node scripts/check-email.mjs                 # test the configuration
+ *   node scripts/check-email.mjs you@gmail.com   # ...and send a real message
  *
- * Reads backend/.env, so fill that in first. The point is to find out that a
- * password is wrong here, on your machine, in ten seconds — rather than at the
- * moment a locked-out customer is waiting for a reset link.
+ * Reads backend/.env. The point is finding out that something is wrong here,
+ * on your machine, in ten seconds — rather than at the moment a locked-out
+ * customer is waiting for a reset link.
  */
 
 import 'dotenv/config';
-import nodemailer from 'nodemailer';
+import { transport, verifyConnection, deliver } from '../src/services/email.service.js';
+import env from '../src/config/env.js';
 
-const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM } = process.env;
+const red = (t) => `\x1b[31m${t}\x1b[0m`;
+const green = (t) => `\x1b[32m${t}\x1b[0m`;
+const dim = (t) => `\x1b[2m${t}\x1b[0m`;
+const bold = (t) => `\x1b[1m${t}\x1b[0m`;
 
-const red = (s) => `\x1b[31m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+console.log(bold('\nChecking email settings in backend/.env\n'));
 
-console.log(bold('\nChecking SMTP settings in backend/.env\n'));
+const mode = transport();
 
-/* ── 1. Are they even filled in? ─────────────────────────────── */
-
-const missing = [];
-if (!SMTP_HOST) missing.push('SMTP_HOST');
-if (!SMTP_USER) missing.push('SMTP_USER');
-if (!SMTP_PASSWORD) missing.push('SMTP_PASSWORD');
-
-if (missing.length) {
-  console.log(red(`  Missing: ${missing.join(', ')}`));
-  console.log(dim('\n  These come from a mail provider — they are not values you invent.'));
-  console.log(dim('  Sign up somewhere (Brevo and Resend have free tiers), find the'));
-  console.log(dim('  page called "SMTP" or "SMTP & API", and copy what it shows you.\n'));
+if (mode === 'console') {
+  console.log(red('  No email transport configured.\n'));
+  console.log('  Set ONE of these:\n');
+  console.log(`  ${bold('BREVO_API_KEY')}   ${dim('recommended - free 300/day, sends over HTTPS')}`);
+  console.log(`  ${bold('RESEND_API_KEY')}  ${dim('also HTTPS; needs a verified domain to reach any address')}`);
+  console.log(`  ${bold('SMTP_HOST + SMTP_USER + SMTP_PASSWORD')}  ${dim('blocked on most free hosts')}\n`);
+  console.log(dim('  The HTTPS providers are the safe choice: Render, Railway and Fly all'));
+  console.log(dim('  block outbound SMTP ports on their free tiers.\n'));
   process.exit(1);
 }
 
-// Catch the most common mistake: pasting the example straight in.
-const placeholders = [/your-provider/i, /your-username/i, /your-password/i, /yourdomain/i, /example\.com$/i];
-const stillPlaceholder = Object.entries({ SMTP_HOST, SMTP_USER, SMTP_PASSWORD })
-  .filter(([, v]) => placeholders.some((p) => p.test(v)));
+/* ── What is about to be used ────────────────────────────────── */
 
-if (stillPlaceholder.length) {
-  console.log(red(`  Still the example text: ${stillPlaceholder.map(([k]) => k).join(', ')}`));
-  console.log(dim('\n  Replace these with the real values from your provider.\n'));
+const mask = (v) => (v
+  ? '•'.repeat(Math.min(String(v).length, 24)) + dim(` (${String(v).length} chars)`)
+  : dim('(not set)'));
+
+console.log(`  transport  ${bold(mode)}`);
+if (mode === 'brevo') console.log(`  api key    ${mask(env.BREVO_API_KEY)}`);
+if (mode === 'resend') console.log(`  api key    ${mask(env.RESEND_API_KEY)}`);
+if (mode === 'smtp') {
+  console.log(`  host       ${env.SMTP_HOST}`);
+  console.log(`  port       ${env.SMTP_PORT} ${dim(env.SMTP_PORT === 465 ? '(implicit TLS)' : '(STARTTLS)')}`);
+  console.log(`  user       ${env.SMTP_USER}`);
+  console.log(`  password   ${mask(env.SMTP_PASSWORD)}`);
+}
+console.log(`  from       ${env.SMTP_FROM || dim('(default)')}\n`);
+
+/* ── Example values pasted in unchanged ──────────────────────── */
+
+const placeholder = /REPLACE_ME|your-provider|your-username|your-password|yourdomain/i;
+const suspect = Object.entries({
+  BREVO_API_KEY: env.BREVO_API_KEY,
+  RESEND_API_KEY: env.RESEND_API_KEY,
+  SMTP_HOST: env.SMTP_HOST,
+  SMTP_USER: env.SMTP_USER,
+  SMTP_PASSWORD: env.SMTP_PASSWORD,
+  SMTP_FROM: env.SMTP_FROM,
+}).filter(([, v]) => v && placeholder.test(v));
+
+if (suspect.length) {
+  console.log(red(`  Still the example text: ${suspect.map(([k]) => k).join(', ')}`));
+  console.log(dim('  Replace these with the real values from your provider.\n'));
   process.exit(1);
 }
 
-const port = Number(SMTP_PORT) || 587;
-console.log(`  host      ${SMTP_HOST}`);
-console.log(`  port      ${port} ${dim(port === 465 ? '(implicit TLS)' : '(STARTTLS)')}`);
-console.log(`  user      ${SMTP_USER}`);
-console.log(`  password  ${'•'.repeat(Math.min(String(SMTP_PASSWORD).length, 24))} ${dim(`(${String(SMTP_PASSWORD).length} chars)`)}`);
-console.log(`  from      ${SMTP_FROM || dim('(not set — a default will be used)')}\n`);
+/* ── Verify ──────────────────────────────────────────────────── */
 
-/* ── 2. Do they actually work? ───────────────────────────────── */
+const ok = await verifyConnection();
 
-const transport = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port,
-  secure: port === 465,
-  auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-  connectionTimeout: 15_000,
-  greetingTimeout: 15_000,
-});
-
-try {
-  await transport.verify();
-  console.log(green('  ✓ Connected and signed in successfully.\n'));
-} catch (err) {
-  console.log(red('  ✗ Could not sign in.\n'));
-  console.log(`  ${dim(err.message)}\n`);
-
-  // Translate the errors people actually hit into what to do about them.
-  const m = String(err.message).toLowerCase();
-  if (m.includes('invalid login') || m.includes('authentication') || err.code === 'EAUTH') {
-    console.log('  The host was reached but the username or password was rejected.');
-    console.log(dim('  Most often: the account password was used instead of the SMTP key.'));
-    console.log(dim('  Providers issue a separate key for SMTP — look for "SMTP key",'));
-    console.log(dim('  "Master password" or "App password" and use that.\n'));
-  } else if (err.code === 'ENOTFOUND' || m.includes('getaddrinfo')) {
-    console.log('  That hostname does not resolve — check SMTP_HOST for a typo.');
-    console.log(dim('  It should look like smtp-relay.brevo.com, not a web address.\n'));
-  } else if (err.code === 'ETIMEDOUT' || m.includes('timeout')) {
-    console.log('  The connection timed out. Usually the wrong port, or a firewall.');
-    console.log(dim('  Try 587 if you used 465, or the other way round.\n'));
-  } else if (m.includes('self signed') || m.includes('certificate')) {
-    console.log('  A TLS certificate problem — check the port matches the host.\n');
-  }
+if (mode === 'smtp' && !ok) {
+  console.log(red('  x Could not reach the mail server.\n'));
+  console.log('  If that was a timeout, the port is blocked - the password is probably fine.');
+  console.log(dim('  Free hosting tiers block outbound SMTP. Set BREVO_API_KEY instead:'));
+  console.log(dim('  same idea, sent over HTTPS, which nothing blocks.\n'));
   process.exit(1);
 }
 
-/* ── 3. Optionally prove it end to end ───────────────────────── */
+console.log(green(`  OK  ${mode === 'smtp' ? 'Connected and signed in.' : 'Credentials present, transport ready.'}`));
+console.log(mode === 'smtp' ? '' : dim('      An API key is only really proven by sending, so do that next.\n'));
+
+/* ── Optionally prove it end to end ──────────────────────────── */
 
 const to = process.argv[2];
 if (!to) {
-  console.log(dim('  Tip: pass your email address to send a real test message —'));
-  console.log(dim('       node scripts/check-email.mjs you@example.com\n'));
+  console.log(dim('  Send a real test message:'));
+  console.log(dim('    node scripts/check-email.mjs you@example.com\n'));
   process.exit(0);
 }
 
-console.log(`  Sending a test message to ${to}…`);
+console.log(`  Sending a test message to ${to} ...`);
 
-try {
-  const info = await transport.sendMail({
-    from: SMTP_FROM || `GameOn <${SMTP_USER}>`,
-    to,
-    subject: 'GameOn — SMTP is working',
-    text: 'If you are reading this, your SMTP settings are correct.\n\n'
-        + 'Password reset emails will reach your customers.\n',
-  });
-  console.log(green(`  ✓ Sent. Message id ${info.messageId}\n`));
-  console.log(dim('  Check the inbox — and the spam folder, which is where a brand new'));
-  console.log(dim('  sending domain usually lands until it builds a reputation.\n'));
-} catch (err) {
-  console.log(red('  ✗ Signed in, but the send was refused.\n'));
-  console.log(`  ${dim(err.message)}\n`);
-  if (/from|sender|not verified|unauthorized/i.test(err.message)) {
-    console.log('  The From address is not one this account is allowed to send as.');
-    console.log(dim('  On a free tier you usually must verify the sender address first.'));
-    console.log(dim('  Set SMTP_FROM to the address you verified with the provider.\n'));
-  }
-  process.exit(1);
+const result = await deliver({
+  to,
+  subject: 'GameOn - email is working',
+  text: 'If you are reading this, your email settings are correct.\n\n'
+      + 'Password reset emails will reach your customers.\n',
+  html: '<p>If you are reading this, your email settings are correct.</p>'
+      + '<p>Password reset emails will reach your customers.</p>',
+});
+
+if (result.delivered) {
+  console.log(green('  OK  Sent.\n'));
+  console.log(dim('  Check the inbox - and the spam folder, which is where a brand new'));
+  console.log(dim('  sender usually lands until it builds a reputation.\n'));
+  process.exit(0);
 }
+
+console.log(red('  x The send was refused.\n'));
+console.log(`  ${dim(result.error || 'no detail returned')}\n`);
+
+if (/sender|from|not verified|unauthorized|403/i.test(result.error || '')) {
+  console.log('  The From address is not one this account may send as.');
+  console.log(dim('  Verify that address with your provider, then set SMTP_FROM to it.\n'));
+}
+process.exit(1);

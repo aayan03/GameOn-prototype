@@ -187,7 +187,38 @@ password reset is the only route back into a locked-out account, so a
 deployment that cannot send email is one where a forgotten password means a
 lost account, wallet balance and booking history.
 
-Any provider that speaks SMTP works. On Render, set:
+### Do not use SMTP on a free tier
+
+Render's free plan — and Railway's, and Fly's — **blocks outbound SMTP ports**
+(25, 465, 587) to stop the platform being used for spam. The failure is
+distinctive and misleading: a connection `ETIMEDOUT`, not a `535` auth
+rejection, because the packets never leave the network. The same credentials
+authenticate perfectly from a laptop, so it reads as a code problem when it is
+a firewall.
+
+Use an HTTP provider instead. Both post over 443, which nothing blocks.
+
+**Brevo** (recommended — free 300/day, and you verify a single sender address
+rather than a whole domain):
+
+```
+BREVO_API_KEY=xkeysib-...
+SMTP_FROM=GameOn <the-address-you-verified@example.com>
+APP_URL=https://your-site.vercel.app
+```
+
+Get the key from Brevo → **SMTP & API** → **API Keys**. Verify your sender
+address under **Senders** first, or sends are refused.
+
+**Resend** is the alternative, but it needs a verified *domain* before it will
+send to anyone but your own account address:
+
+```
+RESEND_API_KEY=re_...
+```
+
+**SMTP** still works wherever the ports are open — a paid Render plan, your own
+VPS, most managed hosts:
 
 ```
 SMTP_HOST=smtp.your-provider.com
@@ -195,7 +226,14 @@ SMTP_PORT=587
 SMTP_USER=...
 SMTP_PASSWORD=...
 SMTP_FROM=GameOn <no-reply@yourdomain.com>
-APP_URL=https://your-site.vercel.app
+```
+
+Whichever you pick, check it before deploying:
+
+```bash
+cd backend
+npm run check:email                              # is it configured correctly?
+node scripts/check-email.mjs you@example.com     # ...and does a message arrive?
 ```
 
 `APP_URL` is the base of the links inside those emails. It is deliberately not

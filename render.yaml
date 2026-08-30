@@ -41,9 +41,17 @@ services:
       # Leave it unset and POST /api/cron/lifecycle 404s.
       - key: CRON_SECRET
         generateValue: true
-      # Email is REQUIRED in production — the server refuses to boot without
+      # Email is REQUIRED in production - the server refuses to boot without
       # it, because password reset is the only way back into a locked-out
-      # account. Any SMTP provider works.
+      # account.
+      #
+      # Use BREVO_API_KEY, not SMTP: Render's free tier blocks outbound SMTP
+      # ports, so an SMTP transport times out at send time even though the
+      # credentials are perfectly valid.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT

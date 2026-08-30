@@ -12,11 +12,12 @@
     "seed:demo": "node src/seed/seed.js --no-lucknow",
     "seed:lucknow": "node src/seed/seed.js --lucknow-only",
     "check": "node tests/load.test.mjs",
-    "test:unit": "node tests/load.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs",
+    "test:unit": "node tests/load.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs && node tests/email.test.mjs",
     "test:integration": "node --test \"tests/integration/*.test.mjs\"",
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
-    "check:email": "node scripts/check-email.mjs"
+    "check:email": "node scripts/check-email.mjs",
+    "fix:indexes": "node scripts/fix-text-index.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
