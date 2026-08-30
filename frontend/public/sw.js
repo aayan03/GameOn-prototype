@@ -36,12 +36,28 @@ const DATA_TTL_MS = 10 * 60 * 1000;
 // asks for a chunk the new cache no longer has, reloads, and can land in a
 // loop. The page asks for the handover explicitly via the message below.
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(SHELL)
-      .then((c) => c.addAll(SHELL_ASSETS))
-      // A single missing asset must not stop the worker installing.
-      .catch((err) => console.warn('[sw] precache partial:', err))
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(SHELL);
+    // A single missing asset must not stop the worker installing.
+    await cache.addAll(SHELL_ASSETS).catch((err) => console.warn('[sw] precache partial:', err));
+
+    /**
+     * Take over at once if a cache from an earlier generation is present.
+     *
+     * Waiting for the user to accept an update is right for a routine change:
+     * it avoids swapping the asset manifest under a page mid-booking. It is
+     * wrong when the cached shell is not merely old but broken - which is
+     * exactly what happened here. The v1 shell was built with relative asset
+     * paths, so every deep link it served was a blank page, and a returning
+     * visitor stayed on it until they noticed a banner and clicked Reload.
+     *
+     * A version bump is the signal that the old cache should not be trusted.
+     * The page reloads itself on controllerchange, so the handover is one
+     * flicker rather than a support ticket.
+     */
+    const keys = await caches.keys();
+    if (keys.some((k) => !k.startsWith(VERSION))) await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {

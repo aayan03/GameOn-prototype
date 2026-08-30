@@ -227,6 +227,23 @@ export function validateEnv() {
       );
     }
 
+    // Brevo and Resend refuse any From address that has not been verified on
+    // the account, and the default is a placeholder nobody owns. The send
+    // fails with "sender not verified" at the moment a locked-out user needs
+    // the link, which is the worst possible time to discover it.
+    //
+    // A warning, deliberately, not a fatal. Email being misconfigured is bad;
+    // refusing to serve the whole site over it is worse, and a guard that
+    // trips on a configuration the operator already has is how a deploy takes
+    // a working site down. Say it loudly and keep running.
+    if (hasHttpEmail && !process.env.SMTP_FROM) {
+      warn.push(
+        'SMTP_FROM is not set. Brevo and Resend reject any From address that has not been '
+        + 'verified on the account, so password-reset emails will fail until you set it to '
+        + 'an address you verified. Example: SMTP_FROM=GameOn <you@yourdomain.com>'
+      );
+    }
+
     // Worth saying out loud rather than letting them discover it in a log at
     // the moment a customer needs a reset link.
     if (!hasHttpEmail && hasSmtp) {
