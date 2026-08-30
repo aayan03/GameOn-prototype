@@ -36,7 +36,7 @@ async function start() {
       environment: env.NODE_ENV,
       // A one-line summary of what is actually switched on, so a deploy log
       // answers "is email working here?" without anyone having to guess.
-      email: email.isConfigured() ? 'smtp' : 'disabled',
+      email: email.isConfigured() ? email.transport() : 'disabled',
       push: push.isConfigured() ? 'web-push' : 'disabled',
       errorTracking: errorTrackingOn() ? 'sentry' : 'disabled',
     });
