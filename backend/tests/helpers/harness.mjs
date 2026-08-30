@@ -36,12 +36,26 @@ function prepareEnv(uri) {
   // limits are live. That is deliberate — the lockout and throttle tests
   // depend on them, and a limiter that is bypassed in tests is a limiter
   // nobody has ever verified.
-  delete process.env.SMTP_HOST;           // email falls back to console mode
-  delete process.env.VAPID_PUBLIC_KEY;
-  delete process.env.VAPID_PRIVATE_KEY;
-  delete process.env.SENTRY_DSN;
-  delete process.env.RAZORPAY_KEY_ID;
-  delete process.env.RAZORPAY_KEY_SECRET;
+
+  /**
+   * Blanked, not deleted — and the difference matters.
+   *
+   * `config/env.js` calls dotenv at import, and dotenv fills any variable
+   * that is ABSENT from the real .env file. Deleting these therefore handed
+   * the suite whatever the developer happened to have configured locally: the
+   * moment real SMTP credentials were added to .env, the password-reset tests
+   * started talking to Gmail and failing. An empty string is defined, so
+   * dotenv leaves it alone and the environment is genuinely controlled.
+   */
+  for (const key of [
+    'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM',
+    'BREVO_API_KEY', 'RESEND_API_KEY',
+    'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY',
+    'SENTRY_DSN', 'RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET',
+    'APP_URL', 'CRON_SECRET', 'ALLOW_SIMULATED_TOPUP',
+  ]) {
+    process.env[key] = '';
+  }
 }
 
 /** Boots Mongo + the app once for a whole test file. */

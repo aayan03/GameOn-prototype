@@ -63,6 +63,12 @@ const env = {
   SMTP_PASSWORD: process.env.SMTP_PASSWORD || '',
   SMTP_FROM: clean(process.env.SMTP_FROM) || 'GameOn <no-reply@gameon.app>',
 
+  // HTTP email providers. Preferred over SMTP on any host that blocks the
+  // outbound SMTP ports — which every free tier does, Render included. Both
+  // are a single POST over 443, which nothing blocks.
+  BREVO_API_KEY: clean(process.env.BREVO_API_KEY),
+  RESEND_API_KEY: clean(process.env.RESEND_API_KEY),
+
   // Where the frontend lives, for links inside emails. Defaults to the first
   // CORS origin, which is almost always right and saves one more variable to
   // forget.
@@ -210,11 +216,24 @@ export function validateEnv() {
     // Email is not optional in production: without it a user who forgets
     // their password is locked out of their account permanently, because the
     // reset link is the only way back in.
-    if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASSWORD) {
+    const hasHttpEmail = env.BREVO_API_KEY || env.RESEND_API_KEY;
+    const hasSmtp = env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD;
+    if (!hasHttpEmail && !hasSmtp) {
       fatal.push(
-        'SMTP_HOST, SMTP_USER and SMTP_PASSWORD are required in production. '
-        + 'Without them password-reset emails cannot be delivered and a locked-out user '
-        + 'has no way back into their account.'
+        'No email transport is configured. Set BREVO_API_KEY or RESEND_API_KEY (recommended — '
+        + 'they send over HTTPS, which works everywhere), or all three SMTP_ variables. '
+        + 'Without one, password-reset emails cannot be delivered and a locked-out user has '
+        + 'no way back into their account.'
+      );
+    }
+
+    // Worth saying out loud rather than letting them discover it in a log at
+    // the moment a customer needs a reset link.
+    if (!hasHttpEmail && hasSmtp) {
+      warn.push(
+        'Using SMTP. Free hosting tiers (Render, Railway, Fly) block outbound SMTP ports, '
+        + 'which shows up as a connection timeout rather than an auth error. If email does not '
+        + 'arrive, set BREVO_API_KEY or RESEND_API_KEY instead — same provider, HTTPS instead of SMTP.'
       );
     }
 

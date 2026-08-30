@@ -9,11 +9,20 @@ jobs:
   backend:
     name: Backend — lint, unit, integration
     runs-on: ubuntu-latest
+    # Both ends of what package.json engines promises. A single version hides
+    # exactly the class of bug that broke this build: `node --test` takes a
+    # directory on 18-21 and a glob on 22+, and the two forms throw on each
+    # other's versions — so the suite passed locally on 24 and failed on 20
+    # before a single test had run.
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
 
       - name: Install
         working-directory: backend
