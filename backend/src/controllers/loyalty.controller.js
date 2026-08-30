@@ -11,9 +11,17 @@ export const redeemSchema = z.object({
 
 /** GET /api/loyalty — everything the loyalty screen renders. */
 export const summary = asyncHandler(async (req, res) => {
+  // Narrow by `type` first so the index does the work. Matching on the
+  // description alone meant every one of this user's transactions — wallet
+  // top-ups, booking payments, refunds — was pulled into memory and scanned
+  // with a regex, then sorted in memory too. Point movements are only ever
+  // written as 'cashback' (awards, redemptions) or 'adjustment' (revocations),
+  // and the description check stays to exclude the non-points adjustments a
+  // TeamUp cost split writes under the same type.
   const history = await Transaction.find({
     user: req.user._id,
-    description: { $regex: 'points' },
+    type: { $in: ['cashback', 'adjustment'] },
+    description: /points/,
   }).sort({ createdAt: -1 }).limit(25).lean();
 
   return ok(res, { ...loyalty.summarise(req.user), history });

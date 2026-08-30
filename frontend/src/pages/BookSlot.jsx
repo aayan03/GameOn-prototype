@@ -18,8 +18,14 @@ export default function BookSlot() {
   const { user, isAuthenticated, setUser } = useAuth();
   const toast = useToast();
 
-  const days = useMemo(() => dateStrip(14), []);
-  const [date, setDate] = useState(days[0].key);
+  // Built from the venue's own window once availability has loaded, so a
+  // venue that takes bookings 30 days out actually offers 30 days. The strip
+  // was hardcoded to 14 and then sliced to `advanceBookingDays` — which could
+  // only ever shorten it, never reach the venue's real limit. A loyalty tier's
+  // bonus days are granted server-side on top of this.
+  const [advanceDays, setAdvanceDays] = useState(14);
+  const days = useMemo(() => dateStrip(Math.min(Math.max(advanceDays, 1), 90)), [advanceDays]);
+  const [date, setDate] = useState(() => dateStrip(1)[0].key);
   const [venueId, setVenueId] = useState(null);
   const [data, setData] = useState(null);          // availability response
   const [courtId, setCourtId] = useState(null);
@@ -51,6 +57,7 @@ export default function BookSlot() {
     try {
       const { data: d } = await bookingApi.availability(venueId, { date });
       setData(d);
+      if (d.venue?.advanceBookingDays) setAdvanceDays(d.venue.advanceBookingDays);
       setCourtId((prev) => (prev && d.courts.some((c) => c.courtId === prev) ? prev : d.courts[0]?.courtId));
       setError('');
     } catch (err) {
@@ -191,7 +198,7 @@ export default function BookSlot() {
               {/* Date strip */}
               <h3 style={{ marginBottom: 12 }}>Choose a date</h3>
               <div className="date-strip">
-                {days.slice(0, venue?.advanceBookingDays || 14).map((d) => (
+                {days.map((d) => (
                   <button
                     key={d.key}
                     className={`date-chip${date === d.key ? ' active' : ''}${d.isToday ? ' today' : ''}`}

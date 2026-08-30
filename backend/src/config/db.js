@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import env from './env.js';
+import logger from '../utils/logger.js';
 
 let memoryServer = null;
 
@@ -19,13 +20,29 @@ export async function connectDB() {
     const { MongoMemoryServer } = await import('mongodb-memory-server');
     memoryServer = await MongoMemoryServer.create();
     uri = memoryServer.getUri('gameon');
-    console.log('⚠️  No MONGO_URI found — started in-memory MongoDB for development.');
-    console.log('    Data resets when the server stops. Set MONGO_URI in .env to persist.');
+    logger.warn('No MONGO_URI set - started an in-memory MongoDB. Data resets when the server stops.');
   }
 
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 20000 });
-  console.log(`✅ MongoDB connected → ${mongoose.connection.name}`);
+
+  /**
+   * Surface index build failures.
+   *
+   * Mongoose builds indexes in the background and reports a failure through
+   * an 'index' event on the model. Nothing listened, so a broken declaration
+   * was swallowed in complete silence — which is exactly how this collection
+   * ran for its whole life with a conflicting text index that never built,
+   * and how a missing unique index (the double-booking guard) could go
+   * unnoticed until two people turned up for the same pitch.
+   */
+  for (const name of mongoose.modelNames()) {
+    mongoose.model(name).on('index', (err) => {
+      if (err) logger.error('index build failed', { err, model: name });
+    });
+  }
+
+  logger.info('MongoDB connected', { database: mongoose.connection.name });
   return mongoose.connection;
 }
 

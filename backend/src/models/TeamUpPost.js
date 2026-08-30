@@ -93,6 +93,11 @@ const teamUpPostSchema = new mongoose.Schema(
 
 teamUpPostSchema.index({ location: '2dsphere' });
 teamUpPostSchema.index({ sport: 1, playAt: 1, status: 1 });
+// The feed sweeps `status: 'open', playAt: < now` on every page load, and the
+// lifecycle job scans the same two fields to settle reliability.
+teamUpPostSchema.index({ status: 1, playAt: 1 });
+// "Games I asked to join" — an array field, so it needs its own index.
+teamUpPostSchema.index({ 'joinRequests.user': 1 });
 
 teamUpPostSchema.virtual('spotsRemaining').get(function spotsRemaining() {
   return Math.max(0, this.spotsNeeded - this.spotsFilled);

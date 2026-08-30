@@ -26,7 +26,12 @@ export default function usePWA() {
       if (reg.waiting) { setWaiting(reg.waiting); setUpdateReady(true); }
     };
 
-    navigator.serviceWorker.register('./sw.js')
+    // Absolute, not './sw.js'. A relative specifier resolves against the page
+    // the user happens to be on, so a visitor landing on /venues/some-turf
+    // asked for /venues/sw.js — which the SPA fallback answers with HTML, and
+    // registration fails with a MIME error. The worker must also be scoped to
+    // the whole origin, or it only controls the directory it was served from.
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
       .then((r) => {
         reg = r;
         if (r.waiting) { setWaiting(r.waiting); setUpdateReady(true); }

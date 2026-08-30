@@ -4,6 +4,7 @@ import { BOOKING_STATUS } from '../config/constants.js';
 import * as notify from './notification.service.js';
 import * as wallet from './wallet.service.js';
 import * as loyalty from './loyalty.service.js';
+import logger from '../utils/logger.js';
 
 /**
  * Scheduled housekeeping.
@@ -117,7 +118,7 @@ async function completeFinishedBookings(now, runId) {
   }
 
   } catch (err) {
-    console.error('[lifecycle] review prompts failed:', err.message);
+    logger.error('lifecycle: review prompts failed', { err });
   }
 
   // Release the claim so the marker never accumulates across runs.
@@ -391,7 +392,7 @@ export async function runLifecycle() {
       try {
         Object.assign(results, await fn(now, runId));
       } catch (err) {
-        console.error(`[lifecycle] ${name} failed:`, err.message);
+        logger.error('lifecycle step failed', { err, step: name });
         results[`${name}Error`] = err.message;
       }
     }
@@ -412,12 +413,12 @@ export function startLifecycleScheduler(intervalMinutes = 15) {
     try {
       const r = await runLifecycle();
       if (r.completed || r.expired || r.reminders || r.settled) {
-        console.log('[lifecycle]', JSON.stringify(r));
+        logger.info('lifecycle run', r);
       }
     } catch (err) {
       // A rejection from an unawaited timer callback would take the process
       // down as an unhandled rejection.
-      console.error('[lifecycle] tick failed:', err.message);
+      logger.error('lifecycle tick failed', { err });
     }
   };
 

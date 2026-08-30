@@ -7,6 +7,7 @@ import routes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { mongoSanitize, preventParamPollution } from './utils/sanitize.js';
 import { globalLimiter, webhookLimiter } from './middleware/rateLimit.js';
+import requestId from './middleware/requestId.js';
 
 const app = express();
 
@@ -18,6 +19,9 @@ const app = express();
 if (env.TRUST_PROXY) app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
+
+// First in the chain: everything downstream logs against this id.
+app.use(requestId);
 
 /* ── Security headers ─────────────────────────────────────────── */
 app.use(helmet({

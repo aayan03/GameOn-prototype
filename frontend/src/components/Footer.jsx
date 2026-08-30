@@ -50,7 +50,7 @@ export default function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <span>© {new Date().getFullYear()} GameOn. Built from the GameOn investor deck.</span>
+          <span>© {new Date().getFullYear()} GameOn. All rights reserved.</span>
           <span>Maps © OpenStreetMap contributors</span>
         </div>
       </div>

@@ -52,11 +52,39 @@ Open <http://localhost:5173>.
 
 ### Demo logins
 
+The login page offers these as one-tap buttons **in development only**. A
+deployed build hides them unless `VITE_SHOW_DEMO_LOGINS=true` is set, because
+the passwords below are public and the owner account can see that venue's
+customer names, phone numbers and revenue. Delete or re-password the seeded
+accounts before taking real traffic.
+
 | Role | Email | Password |
 | --- | --- | --- |
 | Player (Elite tier) | `aayan@gameon.app` | `player123` |
 | Player (Legend tier) | `vaishnavi@gameon.app` | `player123` |
 | Venue owner | `shivanshu@gameon.app` | `owner123` |
+
+---
+
+## Tests
+
+```bash
+cd backend
+npm run lint             # ESLint, both packages have a config
+npm run test:unit        # pure functions: slot maths, pricing, refunds, loyalty
+npm run test:integration # boots the API against an in-memory MongoDB
+npm test                 # everything
+```
+
+The integration suite is the one that matters. It starts the real Express app
+against a real database and drives it over HTTP — middleware, validators,
+Mongoose indexes and controllers together. It covers auth and password reset,
+the booking and refund flow, wallet and loyalty arithmetic, promo limits,
+TeamUp, and every authorization boundary between players, owners and admins.
+
+Several cases fire requests concurrently on purpose: two players racing for
+the same slot, four redemptions of the same loyalty points, five joins for two
+TeamUp spots. Those are the failures that never reproduce by hand.
 
 ---
 

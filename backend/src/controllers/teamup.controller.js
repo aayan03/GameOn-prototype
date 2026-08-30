@@ -9,6 +9,7 @@ import { cleanText, safeRegex } from '../utils/sanitize.js';
 import * as loyalty from '../services/loyalty.service.js';
 import * as wallet from '../services/wallet.service.js';
 import * as notify from '../services/notification.service.js';
+import logger from '../utils/logger.js';
 
 /* ── Validation ──────────────────────────────────────────────── */
 
@@ -140,19 +141,40 @@ async function awardHostBonusOnce(post) {
   await loyalty.award(post.host, LOYALTY.TEAMUP_HOST_BONUS, { reason: 'Hosted a TeamUp game' });
 }
 
-/** Marks posts whose kickoff has passed, so the feed stays honest. */
-async function expireStalePosts() {
-  await TeamUpPost.updateMany(
+/**
+ * Marks posts whose kickoff has passed, so the feed stays honest.
+ *
+ * Throttled, and deliberately not awaited by the caller. This ran as a
+ * blocking, collection-wide `updateMany` on EVERY load of the feed — so a
+ * page that ten people open at once issued ten identical full write passes
+ * and each of them waited for it before the first query even started. The
+ * sweep is housekeeping: a post that stays "open" for another minute is
+ * cosmetic, and the lifecycle job settles the same rows properly anyway.
+ */
+const EXPIRY_SWEEP_INTERVAL_MS = 60_000;
+let lastSweepAt = 0;
+let sweepInFlight = null;
+
+function expireStalePosts() {
+  const now = Date.now();
+  if (sweepInFlight || now - lastSweepAt < EXPIRY_SWEEP_INTERVAL_MS) return;
+  lastSweepAt = now;
+
+  sweepInFlight = TeamUpPost.updateMany(
     { status: 'open', playAt: { $lt: new Date() } },
     { $set: { status: 'expired' } }
-  );
+  )
+    // Never let a housekeeping failure surface as a failed feed request.
+    .catch((err) => logger.error('teamup expiry sweep failed', { err }))
+    .finally(() => { sweepInFlight = null; });
 }
 
 /* ── Endpoints ───────────────────────────────────────────────── */
 
 /** GET /api/teamup — the feed. */
 export const listPosts = asyncHandler(async (req, res) => {
-  await expireStalePosts();
+  // Fire and forget — see the note on the function.
+  expireStalePosts();
 
   const f = req.validatedQuery || {};
   const page = f.page || 1;
@@ -417,6 +439,16 @@ export const requestToJoin = asyncHandler(async (req, res) => {
     spots,
     status: post.autoApprove ? 'accepted' : 'pending',
     wasAccepted: Boolean(post.autoApprove),
+    // Freeze the share at the moment the spot is taken, exactly as
+    // decideRequest does when a host accepts by hand.
+    //
+    // This was missing, and auto-approve is the path where it matters most:
+    // the entry was written with the schema default of 0, settleCosts read
+    // `r.agreedShare ?? perPersonAmount` — which does NOT fall back on zero —
+    // and every auto-approved player was skipped as owing nothing. A host
+    // running an auto-approve game with cost sharing on collected nothing
+    // from anybody, and no error was raised anywhere.
+    agreedShare: post.autoApprove ? (post.costSharing?.perPersonAmount || 0) : 0,
     requestedAt: new Date(),
     respondedAt: post.autoApprove ? new Date() : null,
   };
@@ -449,6 +481,8 @@ export const requestToJoin = asyncHandler(async (req, res) => {
         'joinRequests.$.spots': spots,
         'joinRequests.$.message': message,
         'joinRequests.$.respondedAt': new Date(),
+        'joinRequests.$.wasAccepted': true,
+        'joinRequests.$.agreedShare': post.costSharing?.perPersonAmount || 0,
       } }
     );
     if (!updated.matchedCount) {
@@ -639,7 +673,11 @@ export const settleCosts = asyncHandler(async (req, res) => {
   const agreedBy = new Map(
     (post.joinRequests || [])
       .filter((r) => r.status === 'accepted')
-      .map((r) => [String(r.user), r.agreedShare ?? post.costSharing.perPersonAmount])
+      // `||`, not `??`. A stored 0 means "never recorded" here, not "agreed to
+      // pay nothing" — a genuinely free game is caught by the `share <= 0`
+      // guard below either way. Rows written before agreedShare was set on
+      // the auto-approve path still carry that 0.
+      .map((r) => [String(r.user), r.agreedShare || post.costSharing.perPersonAmount])
   );
 
   const paid = [];
@@ -648,7 +686,7 @@ export const settleCosts = asyncHandler(async (req, res) => {
 
   for (const playerId of post.confirmedPlayers) {
     if (String(playerId) === String(req.user._id)) continue;
-    const share = agreedBy.get(String(playerId)) ?? post.costSharing.perPersonAmount;
+    const share = agreedBy.get(String(playerId)) || post.costSharing.perPersonAmount;
     if (!share || share <= 0) continue;
     try {
       await wallet.transfer(playerId, req.user._id, share, {

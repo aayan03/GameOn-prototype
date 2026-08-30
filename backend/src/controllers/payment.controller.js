@@ -6,6 +6,7 @@ import { ok } from '../utils/response.js';
 import { BOOKING_STATUS } from '../config/constants.js';
 import * as payments from '../services/payment.service.js';
 import * as loyalty from '../services/loyalty.service.js';
+import logger from '../utils/logger.js';
 
 export const orderSchema = z.object({
   groupRef: z.string().trim().min(4).max(40),
@@ -241,7 +242,7 @@ export const webhook = asyncHandler(async (req, res) => {
         }
         await Venue.updateOne({ _id: rows[0].venue }, { $inc: { bookingCount: rows.length } });
       } else if (!amountMatches) {
-        console.error('[webhook] amount mismatch', { order: entity.order_id, got: entity.amount, expected: expected * 100 });
+        logger.error('webhook amount mismatch', { order: entity.order_id, got: entity.amount, expected: expected * 100 });
       }
     }
   }

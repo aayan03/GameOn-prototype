@@ -6,7 +6,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
 import VenueMap from '../components/VenueMap.jsx';
 import { SPORT_ICONS, SPORT_LABELS, rupees } from '../utils/format.js';
-import { prettyDateLong, relativeTime, minuteLabel } from '../utils/date.js';
+import { prettyDateLong, relativeTime, minuteLabel, localKey } from '../utils/date.js';
 import {
   IconArrowLeft, IconPin, IconClock, IconUsers, IconCheck,
   IconClose, IconSparkle, IconShield,
@@ -21,7 +21,7 @@ const TYPE_LABEL = {
 export default function GameDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isAuthenticated, setUser } = useAuth();
+  const { isAuthenticated } = useAuth();
   const toast = useToast();
 
   const [post, setPost] = useState(null);
@@ -144,7 +144,7 @@ export default function GameDetail() {
               <div>
                 <span>When</span>
                 <strong>
-                  {prettyDateLong(kickoff.toISOString().slice(0, 10))} ·{' '}
+                  {prettyDateLong(localKey(kickoff))} ·{' '}
                   {minuteLabel(kickoff.getHours() * 60 + kickoff.getMinutes())}
                 </strong>
                 {!isPast && <span className="text-faint"> {relativeTime(post.playAt)}</span>}

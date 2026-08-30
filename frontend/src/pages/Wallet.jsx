@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { bookingApi } from '../api/endpoints.js';
+import { bookingApi, paymentApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { rupees } from '../utils/format.js';
@@ -19,6 +19,23 @@ export default function Wallet() {
   const [data, setData] = useState({ balance: 0, loyalty: null, transactions: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(0);
+  // Whether a real gateway is wired up. The copy below used to be hardcoded
+  // to "Demo mode … Phase 4 swaps this for Razorpay", so a deployment that
+  // HAD Razorpay configured still told its customers no real payment was
+  // taken — and it leaked an internal roadmap phase number onto a page a
+  // paying customer reads.
+  const [liveGateway, setLiveGateway] = useState(null);
+  // Set when the API answers 501 — the simulated top-up is closed on this
+  // server (see topUpWallet in booking.controller.js).
+  const [topupBlocked, setTopupBlocked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    paymentApi.config()
+      .then(({ data: cfg }) => { if (!cancelled) setLiveGateway(cfg.mode !== 'mock'); })
+      .catch(() => { if (!cancelled) setLiveGateway(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   const load = () => {
     bookingApi.wallet()
@@ -37,7 +54,10 @@ export default function Wallet() {
       toast.success(res.message);
       load();
     } catch (err) {
-      toast.error(err.message);
+      // 501 is policy, not a fault: this deployment does not mint balance.
+      // Swap the panel out rather than showing an error the user cannot act on.
+      if (err.status === 501) setTopupBlocked(true);
+      else toast.error(err.message);
     } finally {
       setBusy(0);
     }
@@ -83,20 +103,36 @@ export default function Wallet() {
         </div>
       </div>
 
-      {/* Top up */}
-      <div className="card card-pad" style={{ marginTop: 18 }}>
-        <h3 style={{ marginBottom: 6 }}>Add money</h3>
-        <p className="text-faint" style={{ marginBottom: 16 }}>
-          Demo mode — no real payment is taken. Phase 4 swaps this for Razorpay.
-        </p>
-        <div className="row gap-10 wrap">
-          {TOPUPS.map((amt) => (
-            <button key={amt} className="btn btn-ghost" onClick={() => topUp(amt)} disabled={busy > 0}>
-              {busy === amt ? <span className="spinner" style={{ width: 15, height: 15 }} /> : `+ ${rupees(amt)}`}
-            </button>
-          ))}
+      {/* Top up.
+          The buttons disappear entirely once the server has told us it will
+          not accept a simulated top-up. Leaving them on screen to fail with a
+          501 reads as a broken wallet rather than a deliberate policy. */}
+      {topupBlocked ? (
+        <div className="card card-pad" style={{ marginTop: 18 }}>
+          <h3 style={{ marginBottom: 6 }}>Adding money</h3>
+          <p className="text-soft">
+            {liveGateway
+              ? 'Pay for a booking directly with card or UPI at checkout. Any refund is credited here.'
+              : 'Top-ups are not enabled on this server. Your balance still covers bookings, and refunds are credited here.'}
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="card card-pad" style={{ marginTop: 18 }}>
+          <h3 style={{ marginBottom: 6 }}>Add money</h3>
+          <p className="text-faint" style={{ marginBottom: 16 }}>
+            {liveGateway === false
+              ? 'This is a test balance — no real payment is taken and it cannot be withdrawn.'
+              : 'Money you add here is used to pay for slots, and refunds come straight back to it.'}
+          </p>
+          <div className="row gap-10 wrap">
+            {TOPUPS.map((amt) => (
+              <button key={amt} className="btn btn-ghost" onClick={() => topUp(amt)} disabled={busy > 0}>
+                {busy === amt ? <span className="spinner" style={{ width: 15, height: 15 }} /> : `+ ${rupees(amt)}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Ledger */}
       <div style={{ marginTop: 30 }}>

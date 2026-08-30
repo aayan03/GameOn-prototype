@@ -59,7 +59,6 @@ const base = (name, area, coords, extra = {}) => ({
   ownerEmail: OWNER_EMAIL,
   lng: coords[0],
   lat: coords[1],
-  address: { area, city: 'Lucknow', state: 'Uttar Pradesh', ...(extra.address || {}) },
   // Not verified — see the header of this file.
   rating: 0,
   reviewCount: 0,
@@ -68,6 +67,9 @@ const base = (name, area, coords, extra = {}) => ({
   isClaimed: false,
   isFeatured: false,
   ...extra,
+  // Re-applied AFTER the spread on purpose: `...extra` would otherwise
+  // replace the whole address object, dropping the city and state whenever a
+  // venue only wanted to override a line of it.
   address: { area, city: 'Lucknow', state: 'Uttar Pradesh', ...(extra.address || {}) },
 });
 

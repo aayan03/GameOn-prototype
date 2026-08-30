@@ -22,10 +22,23 @@ export const createTeamSchema = z.object({
 
 export const updateTeamSchema = createTeamSchema.partial().strict();
 
+/**
+ * Both fields are optional, and that is deliberate.
+ *
+ * The captain's primary flow is "generate a code and paste it in the group
+ * chat" — there is no address to send it to. Requiring one made the UI invent
+ * a placeholder (`invite-1724...@placeholder.local`), which then bound the
+ * code to an email nobody owns, and `joinByCode` rejected every single
+ * redemption with "this invite was sent to a different email address". The
+ * whole invite feature was unusable end to end.
+ *
+ * An address is now what it should always have been: an optional restriction
+ * on who may redeem the code, not a precondition for making one.
+ */
 export const inviteSchema = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email').max(160).optional(),
   phone: z.string().regex(/^[6-9][0-9]{9}$/, 'Enter a valid 10-digit mobile number').optional(),
-}).strict().refine((v) => v.email || v.phone, { message: 'Enter an email or a phone number' });
+}).strict();
 
 export const joinByCodeSchema = z.object({
   code: z.string().trim().min(6).max(12),
@@ -148,10 +161,20 @@ export const invite = asyncHandler(async (req, res) => {
     throw ApiError.conflict('That player is already in the team');
   }
 
-  const pending = team.invites.find(
+  // Only reuse a pending invite when it was addressed to the same person.
+  // An open, unaddressed code is single-use by design, so handing the same
+  // one back would mean the captain can never invite a second player.
+  const pending = (email || phone) && team.invites.find(
     (i) => i.status === 'pending' && ((email && i.email === email) || (phone && i.phone === phone))
   );
   if (pending) return ok(res, { code: pending.code, message: 'An invite is already pending for them.' });
+
+  // Cap the outstanding codes. Each one is a way into a private team, and an
+  // unbounded array on a document is its own problem.
+  const open = team.invites.filter((i) => i.status === 'pending').length;
+  if (open >= 30) {
+    throw ApiError.badRequest('You have 30 unused invite codes already. Have your players redeem those first.');
+  }
 
   const code = makeInviteCode();
   team.invites.push({
@@ -162,7 +185,9 @@ export const invite = asyncHandler(async (req, res) => {
 
   return created(res, {
     code,
-    message: 'Invite created. Share this code with your player.',
+    message: email || phone
+      ? 'Invite created. Share this code with your player.'
+      : 'Invite code created. Anyone with this code can join once.',
   });
 });
 

@@ -6,6 +6,9 @@ export const authApi = {
   me:       () => api.get('/auth/me'),
   updateMe: (payload) => api.patch('/auth/me', payload),
   changePassword: (payload) => api.post('/auth/change-password', payload),
+  // Both unauthenticated: the whole point is that the user cannot log in.
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }, { auth: false }),
+  resetPassword: (payload) => api.post('/auth/reset-password', payload, { auth: false }),
 };
 
 export const venueApi = {
@@ -106,6 +109,8 @@ export const notificationApi = {
   unreadCount:    () => api.get('/notifications/unread-count'),
   markRead:       (ids) => api.patch('/notifications/read', ids ? { ids } : {}),
   remove:         (id) => api.del(`/notifications/${id}`),
+  // Public by definition, and needed before the browser can subscribe.
+  vapidKey:       () => api.get('/notifications/vapid-key', undefined, { auth: false }),
   addPushToken:   (token, platform) => api.post('/notifications/push-token', { token, platform }),
   removePushToken:(token) => api.del('/notifications/push-token', { body: { token } }),
 };

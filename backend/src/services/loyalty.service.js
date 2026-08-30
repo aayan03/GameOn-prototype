@@ -137,7 +137,6 @@ export async function revoke(userOrId, points, { reason = 'Booking cancelled' } 
   if (!updated) return null;
 
   const takeSpendable = Math.max(0, before.loyaltyPoints - updated.loyaltyPoints);
-  const takeLifetime = Math.max(0, before.lifetimePoints - updated.lifetimePoints);
 
   const newTier = tierFor(updated.lifetimePoints);
   if (newTier.key !== updated.loyaltyTier) {

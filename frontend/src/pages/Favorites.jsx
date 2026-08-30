@@ -1,29 +1,54 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { venueApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import VenueCard, { VenueCardSkeleton } from '../components/VenueCard.jsx';
 
 export default function Favorites() {
   const { user, setUser } = useAuth();
+  const toast = useToast();
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * A stable key for the saved set.
+   *
+   * `user.favorites` is a fresh array on every `setUser`, so keying the effect
+   * on the array itself re-ran it after each heart tap — refetching every
+   * saved venue to reflect one removal. A joined string only changes when the
+   * set actually changes.
+   */
+  const favoriteIds = useMemo(() => (user?.favorites || []).map(String), [user?.favorites]);
+  const idsKey = favoriteIds.join(',');
+
   useEffect(() => {
     let cancelled = false;
-    const ids = user?.favorites || [];
-    if (!ids.length) { setVenues([]); setLoading(false); return undefined; }
+
+    if (!idsKey) { setVenues([]); setLoading(false); return undefined; }
 
     setLoading(true);
-    Promise.all(ids.map((id) => venueApi.get(id).then(({ data }) => data.venue).catch(() => null)))
-      .then((results) => { if (!cancelled) setVenues(results.filter(Boolean)); })
+    // One request for the whole set, rather than one per venue.
+    venueApi.list({ ids: idsKey, limit: 50 })
+      .then(({ data }) => { if (!cancelled) setVenues(data); })
+      .catch(() => { if (!cancelled) setVenues([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
+
     return () => { cancelled = true; };
-  }, [user?.favorites]);
+  }, [idsKey]);
 
   const toggleFavorite = async (venueId) => {
-    const { data } = await venueApi.toggleFav(venueId);
-    setUser({ ...user, favorites: data.favorites });
+    // Drop it from the list straight away, then reconcile with the server.
+    // Waiting for the round trip left the card sitting there looking unsaved.
+    const previous = venues;
+    setVenues((list) => list.filter((v) => String(v._id) !== String(venueId)));
+    try {
+      const { data } = await venueApi.toggleFav(venueId);
+      setUser({ ...user, favorites: data.favorites });
+    } catch (err) {
+      setVenues(previous);
+      toast.error(err.message || 'Could not update your saved venues.');
+    }
   };
 
   return (

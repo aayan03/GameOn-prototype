@@ -30,7 +30,14 @@ const operatingHourSchema = new mongoose.Schema(
 
 const venueSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true, index: 'text' },
+    // No field-level `index: 'text'` here. MongoDB allows exactly ONE text
+    // index per collection, so declaring one on this field created `name_text`
+    // and made the compound text index at the bottom of this file fail with
+    // IndexOptionsConflict on every single startup. Mongoose reports that
+    // through an 'index' event nobody was listening to, so it was swallowed
+    // in silence and the collection ran with a name-only search index for its
+    // entire life. The compound declaration below is the one that was meant.
+    name: { type: String, required: true, trim: true },
     slug: { type: String, unique: true, index: true },
     description: { type: String, default: '', maxlength: 2000 },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -135,7 +142,12 @@ const venueSchema = new mongoose.Schema(
 );
 
 venueSchema.index({ location: '2dsphere' });
-venueSchema.index({ name: 'text', description: 'text', 'address.area': 'text', 'address.city': 'text' });
+// The one text index this collection is allowed. Weighted so a name match
+// outranks a passing mention in a description.
+venueSchema.index(
+  { name: 'text', description: 'text', 'address.area': 'text', 'address.city': 'text' },
+  { weights: { name: 10, 'address.area': 5, 'address.city': 5, description: 1 }, name: 'venue_search' },
+);
 
 venueSchema.virtual('startingPrice').get(function startingPrice() {
   if (!this.courts?.length) return 0;

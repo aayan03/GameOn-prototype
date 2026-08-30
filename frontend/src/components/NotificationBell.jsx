@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notificationApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { IconClose, IconCheck } from './Icons.jsx';
+import { IconCheck } from './Icons.jsx';
 
 const POLL_MS = 60_000;
 

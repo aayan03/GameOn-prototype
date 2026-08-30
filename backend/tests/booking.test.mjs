@@ -6,7 +6,7 @@ let pass = 0, fail = 0;
 const eq = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
   if (ok) { pass++; console.log(`  ✓ ${name}`); }
-  else { fail++; console.log(`  ✗ ${name}\n      got  ${JSON.stringify(got)}\n      want ${JSON.stringify(want)}`); };
+  else { fail++; console.log(`  ✗ ${name}\n      got  ${JSON.stringify(got)}\n      want ${JSON.stringify(want)}`); }
 };
 
 console.log('\n── time utilities ──');

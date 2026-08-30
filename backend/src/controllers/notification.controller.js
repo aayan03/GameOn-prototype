@@ -5,6 +5,7 @@ import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok } from '../utils/response.js';
 import * as notify from '../services/notification.service.js';
+import * as push from '../services/push.service.js';
 
 export const listSchema = z.object({
   unread: z.enum(['true', 'false']).optional(),
@@ -16,7 +17,9 @@ export const markReadSchema = z.object({
 }).strict();
 
 export const pushTokenSchema = z.object({
-  token: z.string().min(8).max(512),
+  // Web Push stores the whole PushSubscription as JSON, which is longer than
+  // a native device token. 2 KB covers both with room to spare.
+  token: z.string().min(8).max(2048),
   platform: z.enum(['web', 'android', 'ios']).optional(),
 }).strict();
 
@@ -59,7 +62,28 @@ export const remove = asyncHandler(async (req, res) => {
 
 /** POST /api/notifications/push-token — register this device. */
 export const addPushToken = asyncHandler(async (req, res) => {
-  await notify.registerPushToken(req.user, req.body.token, req.body.platform || 'web');
+  const platform = req.body.platform || 'web';
+
+  /**
+   * Reject a subscription pointing anywhere but a real push service.
+   *
+   * The send path checks this too, but refusing at the door means a hostile
+   * endpoint is never written to a user document in the first place — and the
+   * caller gets told, rather than silently registering something that will
+   * never be delivered to.
+   *
+   * Without the check this endpoint is an SSRF primitive: the stored blob is
+   * the URL the server later POSTs to, and the client picks it.
+   */
+  if (platform === 'web') {
+    let endpoint = null;
+    try { endpoint = JSON.parse(req.body.token)?.endpoint; } catch { endpoint = null; }
+    if (!endpoint || !push.isAllowedPushEndpoint(endpoint)) {
+      throw ApiError.badRequest('That is not a valid push subscription.');
+    }
+  }
+
+  await notify.registerPushToken(req.user, req.body.token, platform);
   return ok(res, { registered: true });
 });
 
@@ -70,3 +94,14 @@ export const removePushToken = asyncHandler(async (req, res) => {
   await notify.removePushToken(req.user, token);
   return ok(res, { removed: true });
 });
+
+/**
+ * GET /api/notifications/vapid-key
+ *
+ * The browser needs the server's VAPID public key to create a subscription.
+ * Returns null when push is not configured, so the client can skip asking for
+ * notification permission entirely rather than requesting a permission it
+ * cannot act on.
+ */
+export const vapidKey = asyncHandler(async (req, res) =>
+  ok(res, { publicKey: push.publicKey(), enabled: push.isConfigured() }));
