@@ -455,3 +455,53 @@ test('an unknown promo code is rejected', async () => {
   }, { token: player.token });
   assert.equal(res.status, 400);
 });
+
+/* ── Gateway (card / UPI) ────────────────────────────────────── */
+
+test('a gateway booking holds the slot without touching the wallet', async () => {
+  const { player, venue, date, slot } = await scenario({ balance: 5000 });
+
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'gateway' }),
+    { token: player.token });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.data.booking.payment.status, 'unpaid',
+    'Razorpay has not collected anything yet');
+
+  // Charging here as well as at the gateway would take the money twice.
+  const wallet = await get('/api/bookings/wallet', { token: player.token });
+  assert.equal(wallet.body.data.balance, 5000, 'wallet untouched');
+
+  // The slot is still held, so nobody can take it while checkout is open.
+  const after = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const same = after.body.data.courts[0].slots.find((s) => s.start === slot.start);
+  assert.ok(['booked', 'held'].includes(same.status), `slot should be held, was ${same.status}`);
+});
+
+test('gateway endpoints are closed when no real gateway is configured', async () => {
+  const { player, venue, date, slot } = await scenario();
+  const created = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'gateway' }),
+    { token: player.token });
+
+  // Without keys there is no secret to verify a signature against, so the
+  // server must refuse rather than accept anything the client claims.
+  const order = await post('/api/payments/order',
+    { groupRef: created.body.data.booking.groupRef }, { token: player.token });
+  assert.equal(order.status, 501);
+
+  const verify = await post('/api/payments/verify', {
+    groupRef: created.body.data.booking.groupRef,
+    orderId: 'order_fake', paymentId: 'pay_fake', signature: 'x'.repeat(64),
+  }, { token: player.token });
+  assert.equal(verify.status, 501, 'a forged signature must never be accepted');
+});
+
+test('an unknown payment method is rejected', async () => {
+  const { player, venue, date, slot } = await scenario();
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'free_please' }),
+    { token: player.token });
+  assert.equal(res.status, 400);
+});

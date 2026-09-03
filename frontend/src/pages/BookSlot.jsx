@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { bookingApi, venueApi } from '../api/endpoints.js';
+import { bookingApi, venueApi, paymentApi } from '../api/endpoints.js';
+import { openCheckout, TEST_CARDS } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { dateStrip, prettyDate } from '../utils/date.js';
@@ -39,6 +40,18 @@ export default function BookSlot() {
   const [quoting, setQuoting] = useState(false);
   const [players, setPlayers] = useState(1);
   const [payMethod, setPayMethod] = useState('wallet');
+  // Null until the API answers. The card/UPI option only appears when a real
+  // gateway is configured — offering it otherwise leads straight to a 501,
+  // because the server refuses to fake a signature it has no secret for.
+  const [gateway, setGateway] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    paymentApi.config()
+      .then(({ data }) => { if (!cancelled) setGateway(data.mode === 'razorpay' ? data : null); })
+      .catch(() => { if (!cancelled) setGateway(null); });
+    return () => { cancelled = true; };
+  }, []);
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
@@ -132,6 +145,39 @@ export default function BookSlot() {
         promoCode: appliedPromo || undefined,
         players, paymentMethod: payMethod,
       });
+
+      /**
+       * Card and UPI settle after the booking exists, not before.
+       *
+       * The slot is held the moment the rows are written, so nobody can take
+       * it while checkout is open; the amount comes from the order the SERVER
+       * built off those rows, never from anything this page calculated.
+       */
+      if (payMethod === 'gateway') {
+        const { data: order } = await paymentApi.order(res.booking.groupRef);
+        const result = await openCheckout({
+          order, keyId: gateway?.keyId, user, venueName: venue?.name,
+        });
+
+        if (result.status !== 'paid') {
+          // The booking stands, unpaid, and can be paid or cancelled from the
+          // ticket — losing the slot because a modal was closed would be worse.
+          const why = {
+            dismissed: 'Payment cancelled. Your slot is held — you can pay from the booking.',
+            failed: result.message,
+            unavailable: 'Could not load the payment window. Check for an ad blocker, or pay from your wallet.',
+          }[result.status];
+          toast.info(why);
+          navigate(`/bookings/${res.booking.groupRef}`, { replace: true });
+          return;
+        }
+
+        await paymentApi.verify({ groupRef: res.booking.groupRef, ...result.payload });
+        toast.success('Payment confirmed. See you on the pitch.');
+        navigate(`/bookings/${res.booking.groupRef}?new=1`, { replace: true });
+        return;
+      }
+
       if (typeof res.walletBalance === 'number') setUser({ ...user, walletBalance: res.walletBalance });
       toast.success(res.message);
       navigate(`/bookings/${res.booking.groupRef}?new=1`, { replace: true });
@@ -391,6 +437,24 @@ export default function BookSlot() {
                     {payMethod === 'mock_upi' && <IconCheck style={{ width: 20, height: 20 }} />}
                   </button>
 
+                  {gateway && (
+                    <button
+                      className={`pay-opt${payMethod === 'gateway' ? ' active' : ''}`}
+                      onClick={() => setPayMethod('gateway')}
+                    >
+                      <span className="pay-icon">💳</span>
+                      <span className="grow">
+                        <strong style={{ display: 'block' }}>Card, UPI or netbanking</strong>
+                        <span className="text-faint">
+                          {gateway.keyId?.startsWith('rzp_test_')
+                            ? 'Razorpay test mode — no real money moves'
+                            : 'Secure payment via Razorpay'}
+                        </span>
+                      </span>
+                      {payMethod === 'gateway' && <IconCheck style={{ width: 20, height: 20 }} />}
+                    </button>
+                  )}
+
                   <button
                     className={`pay-opt${payMethod === 'pay_at_venue' ? ' active' : ''}`}
                     onClick={() => setPayMethod('pay_at_venue')}
@@ -403,6 +467,19 @@ export default function BookSlot() {
                     {payMethod === 'pay_at_venue' && <IconCheck style={{ width: 20, height: 20 }} />}
                   </button>
                 </div>
+
+                {payMethod === 'gateway' && gateway?.keyId?.startsWith('rzp_test_') && (
+                  <div className="alert alert-info" style={{ marginTop: 14, display: 'block' }}>
+                    <strong style={{ display: 'block', marginBottom: 6 }}>Test mode — use these cards</strong>
+                    {TEST_CARDS.map((c) => (
+                      <div key={c.number} style={{ fontSize: '.86rem', marginBottom: 3 }}>
+                        <strong>{c.label}:</strong>{' '}
+                        <span className="mono">{c.number}</span>{' '}
+                        <span className="text-faint">— {c.note}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {walletShort && (
                   <div className="alert alert-warn" style={{ marginTop: 14 }}>
@@ -507,6 +584,7 @@ export default function BookSlot() {
                         disabled={submitting || quoting || !quote || (walletShort && payMethod === 'wallet')}
                       >
                         {submitting ? <span className="spinner" style={{ width: 18, height: 18 }} />
+                          : payMethod === 'gateway' ? `Pay ${rupees(quote?.total || 0)} securely`
                           : isInstant ? `Pay ${rupees(quote?.total || 0)} & confirm` : 'Send booking request'}
                       </button>
                       <button className="btn btn-ghost btn-block" onClick={() => setStep(0)} disabled={submitting}>

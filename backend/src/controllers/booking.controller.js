@@ -32,7 +32,11 @@ export const quoteSchema = z.object({
 export const createBookingSchema = quoteSchema.extend({
   players: z.number().int().min(1).max(40).optional(),
   notes: z.string().max(500).optional(),
-  paymentMethod: z.enum(['wallet', 'mock_upi', 'mock_card', 'pay_at_venue']).default('wallet'),
+  // 'gateway' creates the booking unpaid and hands off to Razorpay:
+  // POST /payments/order -> checkout -> POST /payments/verify marks it paid.
+  // The Booking model has always allowed it; the schema never did, so the
+  // card/UPI path the API implements was unreachable from the client.
+  paymentMethod: z.enum(['wallet', 'mock_upi', 'mock_card', 'pay_at_venue', 'gateway']).default('wallet'),
 });
 
 export const cancelSchema = z.object({
@@ -262,7 +266,11 @@ export const createBooking = asyncHandler(async (req, res) => {
   // "UPI" and "card" options are simulated gateways, but the money still has
   // to come from somewhere real — marking a booking paid without debiting
   // anything, and then refunding it as wallet credit, is a money printer.
-  if (isInstant && paymentMethod !== 'pay_at_venue' && q.total > 0) {
+  // Neither pay-at-venue nor gateway settles against the wallet here: the
+  // first is cash at the gate, the second is money Razorpay has not collected
+  // yet. Debiting for a gateway booking would charge twice.
+  const settlesFromWallet = paymentMethod !== 'pay_at_venue' && paymentMethod !== 'gateway';
+  if (isInstant && settlesFromWallet && q.total > 0) {
     try {
       await wallet.debit(req.user, q.total, {
         booking: docs[0],
