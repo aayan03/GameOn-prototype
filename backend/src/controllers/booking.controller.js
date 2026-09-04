@@ -32,7 +32,21 @@ export const quoteSchema = z.object({
 export const createBookingSchema = quoteSchema.extend({
   players: z.number().int().min(1).max(40).optional(),
   notes: z.string().max(500).optional(),
-  paymentMethod: z.enum(['wallet', 'mock_upi', 'mock_card', 'pay_at_venue']).default('wallet'),
+  /**
+   * Three honest ways to pay, and no fourth.
+   *
+   * 'mock_upi' and 'mock_card' are gone. They presented themselves as UPI and
+   * card payments and silently debited the wallet instead - the player picked
+   * "UPI", was never asked to authorise anything, and the booking came back
+   * paid. A button that names one payment method and quietly uses another is
+   * not a simulation, it is a lie in the interface.
+   *
+   * 'gateway' is the real thing: the booking is created unpaid, Razorpay
+   * collects, and /payments/verify marks it paid only once the signature
+   * checks out. The Booking model still accepts the old values so existing
+   * rows keep reading correctly; they just cannot be created any more.
+   */
+  paymentMethod: z.enum(['wallet', 'pay_at_venue', 'gateway']).default('wallet'),
 });
 
 export const cancelSchema = z.object({
@@ -262,7 +276,11 @@ export const createBooking = asyncHandler(async (req, res) => {
   // "UPI" and "card" options are simulated gateways, but the money still has
   // to come from somewhere real — marking a booking paid without debiting
   // anything, and then refunding it as wallet credit, is a money printer.
-  if (isInstant && paymentMethod !== 'pay_at_venue' && q.total > 0) {
+  // Neither pay-at-venue nor gateway settles against the wallet here: the
+  // first is cash at the gate, the second is money Razorpay has not collected
+  // yet. Debiting for a gateway booking would charge twice.
+  const settlesFromWallet = paymentMethod !== 'pay_at_venue' && paymentMethod !== 'gateway';
+  if (isInstant && settlesFromWallet && q.total > 0) {
     try {
       await wallet.debit(req.user, q.total, {
         booking: docs[0],
