@@ -505,3 +505,23 @@ test('an unknown payment method is rejected', async () => {
     { token: player.token });
   assert.equal(res.status, 400);
 });
+
+test('the fake UPI and card methods can no longer be used', async () => {
+  const { player, venue, date, slot } = await scenario({ balance: 50000 });
+
+  // These presented as UPI and card payments and silently debited the wallet.
+  // A booking must not be creatable through a method that names one thing and
+  // does another.
+  for (const paymentMethod of ['mock_upi', 'mock_card']) {
+    const res = await post('/api/bookings',
+      bookBody(venue, slot, date, { paymentMethod }),
+      { token: player.token });
+    assert.equal(res.status, 400, `${paymentMethod} should be rejected`);
+  }
+
+  // The three honest ones still work.
+  const ok = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'wallet' }),
+    { token: player.token });
+  assert.equal(ok.status, 201);
+});

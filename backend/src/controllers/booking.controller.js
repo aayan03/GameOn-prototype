@@ -32,11 +32,21 @@ export const quoteSchema = z.object({
 export const createBookingSchema = quoteSchema.extend({
   players: z.number().int().min(1).max(40).optional(),
   notes: z.string().max(500).optional(),
-  // 'gateway' creates the booking unpaid and hands off to Razorpay:
-  // POST /payments/order -> checkout -> POST /payments/verify marks it paid.
-  // The Booking model has always allowed it; the schema never did, so the
-  // card/UPI path the API implements was unreachable from the client.
-  paymentMethod: z.enum(['wallet', 'mock_upi', 'mock_card', 'pay_at_venue', 'gateway']).default('wallet'),
+  /**
+   * Three honest ways to pay, and no fourth.
+   *
+   * 'mock_upi' and 'mock_card' are gone. They presented themselves as UPI and
+   * card payments and silently debited the wallet instead - the player picked
+   * "UPI", was never asked to authorise anything, and the booking came back
+   * paid. A button that names one payment method and quietly uses another is
+   * not a simulation, it is a lie in the interface.
+   *
+   * 'gateway' is the real thing: the booking is created unpaid, Razorpay
+   * collects, and /payments/verify marks it paid only once the signature
+   * checks out. The Booking model still accepts the old values so existing
+   * rows keep reading correctly; they just cannot be created any more.
+   */
+  paymentMethod: z.enum(['wallet', 'pay_at_venue', 'gateway']).default('wallet'),
 });
 
 export const cancelSchema = z.object({

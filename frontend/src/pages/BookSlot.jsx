@@ -425,18 +425,6 @@ export default function BookSlot() {
                     {payMethod === 'wallet' && <IconCheck style={{ width: 20, height: 20 }} />}
                   </button>
 
-                  <button
-                    className={`pay-opt${payMethod === 'mock_upi' ? ' active' : ''}`}
-                    onClick={() => setPayMethod('mock_upi')}
-                  >
-                    <span className="pay-icon">📱</span>
-                    <span className="grow">
-                      <strong style={{ display: 'block' }}>UPI</strong>
-                      <span className="text-faint">Demo mode — no real payment is taken</span>
-                    </span>
-                    {payMethod === 'mock_upi' && <IconCheck style={{ width: 20, height: 20 }} />}
-                  </button>
-
                   {gateway && (
                     <button
                       className={`pay-opt${payMethod === 'gateway' ? ' active' : ''}`}
