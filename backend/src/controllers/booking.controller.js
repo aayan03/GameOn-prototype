@@ -211,7 +211,22 @@ export const createBooking = asyncHandler(async (req, res) => {
   });
 
   const isInstant = venue.bookingMode === BOOKING_MODES.AUTOMATED;
-  const status = isInstant ? BOOKING_STATUS.CONFIRMED : BOOKING_STATUS.PENDING;
+
+  /**
+   * A gateway booking is NOT confirmed by creating it.
+   *
+   * Razorpay has collected nothing at this point. Marking it confirmed here
+   * meant that closing the checkout window left a booking that called itself
+   * confirmed, printed a booking reference and rendered a QR code — a ticket
+   * indistinguishable from a paid one, for money nobody had taken. Someone
+   * could have turned up at the gate with it.
+   *
+   * It stays pending until /payments/verify has checked the signature, which
+   * is the only moment we actually know the payment happened.
+   */
+  const awaitingPayment = paymentMethod === 'gateway';
+  const confirmedNow = isInstant && !awaitingPayment;
+  const status = confirmedNow ? BOOKING_STATUS.CONFIRMED : BOOKING_STATUS.PENDING;
   const groupRef = 'GRP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
 
   // Spread the discount and fee proportionally across the slots so each
@@ -252,7 +267,7 @@ export const createBooking = asyncHandler(async (req, res) => {
       totalAmount: total,
       promoCode: promoCode ? promoCode.toUpperCase() : '',
       promoOwner: q.promoOwner || null,
-      confirmedAt: isInstant ? new Date() : null,
+      confirmedAt: confirmedNow ? new Date() : null,
       payment: { method: paymentMethod, status: 'unpaid' },
     })));
   } catch (err) {
@@ -343,11 +358,14 @@ export const createBooking = asyncHandler(async (req, res) => {
   // Not `booking_reminder` — a request awaiting the venue is not a reminder,
   // and typing it as one gave it an alarm-clock icon and made it
   // indistinguishable from the day-before nudge in the notification list.
-  await notify.notify(req.user._id, isInstant ? 'booking_confirmed' : 'booking_requested', {
-    title: isInstant ? 'Booking confirmed' : 'Request sent',
-    body: isInstant
-      ? `${venue.name} on ${date}. Tap for your ticket.`
-      : `${venue.name} will confirm shortly. Nothing has been charged.`,
+  await notify.notify(req.user._id, confirmedNow ? 'booking_confirmed' : 'booking_requested', {
+    title: awaitingPayment ? 'Finish your payment'
+      : confirmedNow ? 'Booking confirmed' : 'Request sent',
+    body: awaitingPayment
+      ? `Your slot at ${venue.name} is held until you pay. Tap to finish.`
+      : confirmedNow
+        ? `${venue.name} on ${date}. Tap for your ticket.`
+        : `${venue.name} will confirm shortly. Nothing has been charged.`,
     link: `/bookings/${groupRef}`,
   });
 
@@ -373,9 +391,11 @@ export const createBooking = asyncHandler(async (req, res) => {
     loyalty: loyaltyResult,
     loyaltyPoints: req.user.loyaltyPoints,
     loyaltyTier: req.user.loyaltyTier,
-    message: isInstant
-      ? 'Booking confirmed. See you on the pitch.'
-      : `Request sent. ${venue.name} usually confirms within ${venue.manualContact?.responseTimeMins || 30} minutes.`,
+    message: awaitingPayment
+      ? 'Slot held. Complete the payment to confirm it.'
+      : confirmedNow
+        ? 'Booking confirmed. See you on the pitch.'
+        : `Request sent. ${venue.name} usually confirms within ${venue.manualContact?.responseTimeMins || 30} minutes.`,
   });
 });
 

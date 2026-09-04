@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { bookingApi } from '../api/endpoints.js';
+import { bookingApi, paymentApi } from '../api/endpoints.js';
+import { openCheckout } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Confetti from '../components/Confetti.jsx';
@@ -74,6 +75,36 @@ export default function BookingDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupRef]);
 
+  const [paying, setPaying] = useState(false);
+
+  /** Finish a payment that was started and abandoned. */
+  const payNow = async () => {
+    setPaying(true);
+    try {
+      const [{ data: cfg }, { data: order }] = await Promise.all([
+        paymentApi.config(),
+        paymentApi.order(groupRef),
+      ]);
+      const result = await openCheckout({
+        order, keyId: cfg.keyId, user, venueName: booking?.venue?.name,
+      });
+      if (result.status !== 'paid') {
+        toast.info(result.status === 'dismissed'
+          ? 'Payment cancelled. The slot is still held.'
+          : result.message || 'Could not open the payment window.');
+        return;
+      }
+      await paymentApi.verify({ groupRef, ...result.payload });
+      const { data } = await bookingApi.get(groupRef);
+      setBooking(data);
+      toast.success('Payment confirmed. See you on the pitch.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setPaying(false);
+    }
+  };
+
   const onCancelled = (res) => {
     setBooking((b) => ({ ...b, status: 'cancelled' }));
     if (typeof res.walletBalance === 'number') setUser({ ...user, walletBalance: res.walletBalance });
@@ -107,7 +138,22 @@ export default function BookingDetail() {
   const upcoming = new Date(booking.endsAt) > new Date();
   const venue = booking.venue || {};
 
-  const statusBadge = isConfirmed ? { cls: 'badge-instant', text: '✓ Confirmed' }
+  /**
+   * A slot held for a payment that was never completed.
+   *
+   * This has to be told apart from everything else on the page. A booking
+   * awaiting payment used to render the same ticket as a paid one — same
+   * badge, same reference, same QR code — so closing the Razorpay window left
+   * something that looked exactly like proof of a booking, for money nobody
+   * had taken.
+   */
+  const awaitingPayment = booking.payment?.method === 'gateway'
+    && booking.payment?.status !== 'paid'
+    && !isCancelled
+    && booking.status !== 'completed';
+
+  const statusBadge = awaitingPayment ? { cls: 'badge-warning', text: '⏳ Payment not completed' }
+    : isConfirmed ? { cls: 'badge-instant', text: '✓ Confirmed' }
     : isPending ? { cls: 'badge-manual', text: '⏳ Awaiting venue' }
     : booking.status === 'rejected' ? { cls: 'badge-danger', text: 'Declined by venue' }
     : booking.status === 'cancelled' ? { cls: 'badge-danger', text: 'Cancelled' }
@@ -115,7 +161,7 @@ export default function BookingDetail() {
 
   return (
     <div className="container section fade-in">
-      <Confetti active={celebrate && !isCancelled} />
+      <Confetti active={celebrate && !isCancelled && booking.payment?.status === 'paid'} />
 
       <Link to="/bookings" className="link-btn row gap-6" style={{ marginBottom: 20 }}>
         <IconArrowLeft style={{ width: 15, height: 15 }} /> All bookings
@@ -192,8 +238,29 @@ export default function BookingDetail() {
             <div className="ticket-ref">{booking.bookingRef}</div>
           </div>
 
-          {!isCancelled && (
+          {/* The QR is what a player shows at the gate, so it appears only
+              once the booking is genuinely valid. */}
+          {!isCancelled && !awaitingPayment && (
             <div className="qr-box"><QrBlock text={booking.bookingRef} /></div>
+          )}
+
+          {awaitingPayment && (
+            <div className="alert alert-warn" style={{ display: 'block' }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>This booking is not paid yet</strong>
+              <p style={{ fontSize: '.92rem', marginBottom: 12 }}>
+                Your slot is held, but it is not confirmed and there is no ticket until
+                the payment goes through.
+              </p>
+              <div className="row gap-10 wrap">
+                <button className="btn btn-primary" onClick={payNow} disabled={paying}>
+                  {paying ? <span className="spinner spinner-light" style={{ width: 16, height: 16 }} />
+                          : `Pay ${rupees(booking.totalAmount)} now`}
+                </button>
+                <button className="btn btn-ghost" onClick={() => setShowCancel(true)} disabled={paying}>
+                  Release the slot
+                </button>
+              </div>
+            </div>
           )}
 
           {isPending && (
