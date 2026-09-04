@@ -525,3 +525,52 @@ test('the fake UPI and card methods can no longer be used', async () => {
     { token: player.token });
   assert.equal(ok.status, 201);
 });
+
+test('an abandoned gateway payment never looks like a confirmed booking', async () => {
+  const { player, venue, date, slot } = await scenario({ balance: 50000 });
+
+  // Create it and then do nothing else — exactly what happens when someone
+  // closes the Razorpay window.
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'gateway' }),
+    { token: player.token });
+
+  assert.equal(res.status, 201);
+  assert.notEqual(res.body.data.booking.status, 'confirmed',
+    'an unpaid booking must not call itself confirmed - it would print a valid-looking ticket');
+  assert.equal(res.body.data.booking.status, 'pending');
+  assert.equal(res.body.data.booking.payment.status, 'unpaid');
+  // confirmedAt is not part of the grouped response, so check the row itself.
+  const row = await mongoose.model('Booking').findOne({ groupRef: res.body.data.booking.groupRef }).lean();
+  assert.equal(row.confirmedAt, null, 'nothing confirmed it');
+
+  // And re-reading it tells the same story.
+  const fetched = await get(`/api/bookings/${res.body.data.booking.groupRef}`, { token: player.token });
+  assert.equal(fetched.body.data.status, 'pending');
+  assert.equal(fetched.body.data.payment.status, 'unpaid');
+});
+
+test('a wallet booking is still confirmed immediately', async () => {
+  // The change above must not make ordinary paid bookings provisional.
+  const { player, venue, date, slot } = await scenario({ balance: 50000 });
+  const res = await post('/api/bookings', bookBody(venue, slot, date), { token: player.token });
+
+  assert.equal(res.body.data.booking.status, 'confirmed');
+  assert.equal(res.body.data.booking.payment.status, 'paid');
+  const row = await mongoose.model('Booking').findOne({ groupRef: res.body.data.booking.groupRef }).lean();
+  assert.ok(row.confirmedAt, 'confirmedAt is stamped');
+});
+
+test('an unpaid gateway booking still holds its slot', async () => {
+  const { player, venue, date, slot } = await scenario();
+  await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'gateway' }),
+    { token: player.token });
+
+  // Holding the slot is the point of creating the booking before payment -
+  // nobody should be able to take it while checkout is open.
+  const other = await createUser({ role: 'player' });
+  await fundWallet(other.id, 50000);
+  const stolen = await post('/api/bookings', bookBody(venue, slot, date), { token: other.token });
+  assert.equal(stolen.status, 409);
+});
