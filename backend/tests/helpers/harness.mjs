@@ -32,6 +32,12 @@ function prepareEnv(uri) {
   process.env.PORT = '0';                 // ask the OS for a free port
   process.env.CORS_ORIGINS = 'http://localhost:5173';
   process.env.LOG_LEVEL_APP = 'silent';   // keep the test output readable
+  // Pin the VENUE clock. The suite is deliberately run under a different
+  // server TZ in CI, and a fixture that derived its dates from the server's
+  // clock while the app used the venue's would disagree by a day for part of
+  // every evening — a suite that fails only between 6:30pm and midnight is
+  // worse than no suite at all.
+  process.env.APP_TIMEZONE = 'Asia/Kolkata';
   // Rate limiters skip only in 'development'; NODE_ENV is 'test' here, so the
   // limits are live. That is deliberate — the lockout and throttle tests
   // depend on them, and a limiter that is bypassed in tests is a limiter
@@ -66,6 +72,7 @@ export async function startTestServer() {
   prepareEnv(memoryServer.getUri('gameon_test'));
 
   const { default: app } = await import('../../src/app.js');
+  timeUtil = await import('../../src/utils/time.js');
   await mongoose.connect(process.env.MONGO_URI);
   // Indexes are what enforce the double-booking guard and the unique
   // constraints. Mongoose builds them lazily, so a fast test can beat them to
@@ -200,12 +207,22 @@ export async function createVenue(owner, overrides = {}) {
   return res.body.data.venue;
 }
 
-/** A local YYYY-MM-DD key `offset` days from today — matches utils/time.js. */
+/**
+ * A YYYY-MM-DD key `offset` days from today, on the VENUE's clock.
+ *
+ * Delegates to the app's own helper rather than reimplementing it. The old
+ * hand-rolled copy read the server timezone, so under CI's deliberately
+ * mismatched TZ it asked for a different day than the app would have served.
+ */
+export async function dateKeyAsync(offset = 1) {
+  const { todayKey } = await import('../../src/utils/time.js');
+  return todayKey(offset);
+}
+
+let timeUtil = null;
 export function dateKey(offset = 1) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (!timeUtil) throw new Error('call startTestServer() before dateKey()');
+  return timeUtil.todayKey(offset);
 }
 
 /** First bookable slot on a venue's court for a given date. */

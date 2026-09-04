@@ -6,6 +6,17 @@ export const authApi = {
   me:       () => api.get('/auth/me'),
   updateMe: (payload) => api.patch('/auth/me', payload),
   changePassword: (payload) => api.post('/auth/change-password', payload),
+  /**
+   * Ends the session on the SERVER too.
+   *
+   * `auth: false` and the token in the body, because logging out is exactly
+   * the moment the access token is most likely to have expired — and a logout
+   * that 401s and gives up leaves the refresh token alive for another month.
+   * `retry: false` so a 401 cannot bounce this through the refresh path it is
+   * trying to shut down.
+   */
+  logout: (refreshToken) => api.post('/auth/logout', { refreshToken }, { auth: false, retry: false }),
+  logoutEverywhere: () => api.post('/auth/logout-all'),
   // Both unauthenticated: the whole point is that the user cannot log in.
   forgotPassword: (email) => api.post('/auth/forgot-password', { email }, { auth: false }),
   resetPassword: (payload) => api.post('/auth/reset-password', payload, { auth: false }),

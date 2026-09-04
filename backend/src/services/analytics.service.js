@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Booking, Venue, Review } from '../models/index.js';
 import { BOOKING_STATUS } from '../config/constants.js';
-import { toMinutes, dayOfWeek, localKey } from '../utils/time.js';
+import { toMinutes, dayOfWeek, addDays, rangeFor } from '../utils/time.js';
 
 const OID = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -24,15 +24,16 @@ const REVENUE = {
   ],
 };
 
-/** Inclusive day range as Date objects, from a day count. */
-export function rangeFor(days = 30) {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date();
-  start.setDate(start.getDate() - (days - 1));
-  start.setHours(0, 0, 0, 0);
-  return { start, end };
-}
+/**
+ * Inclusive day range as Date objects, from a day count.
+ *
+ * Re-exported from utils/time.js rather than defined here. The old local copy
+ * used `setHours`, which snaps to the SERVER's midnight — while every figure
+ * these reports group by (`Booking.date`) is keyed to the VENUE's. On a UTC
+ * host serving Indian venues the two disagreed by 5½ hours, so the first and
+ * last day of every range were partly filled from the wrong day.
+ */
+export { rangeFor };
 
 /**
  * Headline numbers for the owner dashboard.
@@ -147,7 +148,7 @@ export async function overview(venueIds, days = 30) {
  */
 export async function occupancy(venueIds, days = 30) {
   if (!venueIds.length) return 0;
-  const { start, end } = rangeFor(days);
+  const { start, end, startKey } = rangeFor(days);
 
   const venues = await Venue.find({ _id: { $in: venueIds } })
     .select('courts operatingHours slotDurationMins')
@@ -155,10 +156,11 @@ export async function occupancy(venueIds, days = 30) {
 
   let capacity = 0;
   for (let d = 0; d < days; d++) {
-    const day = new Date(start);
-    day.setDate(day.getDate() + d);
-    // Local key, not toISOString — see utils/time.js#localKey.
-    const key = localKey(day);
+    // Step the key by calendar days, not by adding 24h to an instant.
+    // `setDate` moves the date in the SERVER's timezone, which is not the one
+    // `localKey` reads it back in — so on a UTC host the two disagreed and a
+    // day could be emitted twice or skipped entirely.
+    const key = addDays(startKey, d);
     const dow = dayOfWeek(key);
 
     for (const v of venues) {
@@ -185,13 +187,11 @@ export async function occupancy(venueIds, days = 30) {
 
 /** Daily revenue and booking counts, zero-filled so the chart has no gaps. */
 export async function revenueSeries(venueIds, days = 30) {
-  const { start, end } = rangeFor(days);
+  const { start, end, startKey } = rangeFor(days);
   const buckets = new Map();
 
   for (let d = 0; d < days; d++) {
-    const day = new Date(start);
-    day.setDate(day.getDate() + d);
-    const key = localKey(day);
+    const key = addDays(startKey, d);
     buckets.set(key, { date: key, revenue: 0, bookings: 0 });
   }
 

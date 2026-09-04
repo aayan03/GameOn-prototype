@@ -574,3 +574,124 @@ test('an unpaid gateway booking still holds its slot', async () => {
   const stolen = await post('/api/bookings', bookBody(venue, slot, date), { token: other.token });
   assert.equal(stolen.status, 409);
 });
+
+
+/* ── Promo caps hold under concurrency ───────────────────────── */
+
+test('a one-per-customer promo cannot be redeemed twice at once', async () => {
+  const { player, venue, date } = await scenario();
+
+  // GAMEON50 allows 5 uses; FIRST20 is first-booking-only, so it is the
+  // one-shot case. Two bookings fired together both used to pass the
+  // check-then-act cap and both take the discount.
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const court = grid.body.data.courts[0];
+  const open = court.slots.filter((s) => s.status === 'available').slice(0, 2);
+  assert.ok(open.length === 2, 'need two free slots');
+
+  const book = (slot) => post('/api/bookings', {
+    venueId: venue._id, courtId: court.courtId, date,
+    starts: [slot.start], paymentMethod: 'wallet', promoCode: 'FIRST20',
+  }, { token: player.token });
+
+  const [a, b] = await Promise.all([book(open[0]), book(open[1])]);
+  const discounted = [a, b].filter((r) => r.status === 201 && r.body.data.booking.discount > 0);
+  assert.equal(discounted.length, 1, 'exactly one booking may carry the first-booking discount');
+});
+
+test('a promo use is handed back when the booking fails', async () => {
+  const { player, venue, date, slot } = await scenario({ balance: 0 });
+
+  // No money: the booking is created, the wallet debit fails, everything is
+  // unwound. The redemption must be unwound with it.
+  const broke = await post('/api/bookings', {
+    venueId: venue._id, courtId: slot.courtId, date,
+    starts: [slot.start], paymentMethod: 'wallet', promoCode: 'GAMEON50',
+  }, { token: player.token });
+  assert.equal(broke.status, 400, 'no balance');
+
+  const claims = await mongoose.model('PromoRedemption')
+    .findOne({ user: player.id, code: 'GAMEON50' }).lean();
+  assert.ok(!claims || claims.count === 0, 'a failed booking must not burn a redemption');
+});
+
+test('the quote endpoint never leaks a promo’s internal bookkeeping', async () => {
+  const { player, venue, date, slot } = await scenario();
+  const res = await post('/api/bookings/quote', {
+    venueId: venue._id, courtId: slot.courtId, date,
+    starts: [slot.start], promoCode: 'GAMEON50',
+  }, { token: player.token });
+
+  assert.equal(res.status, 200);
+  const body = JSON.stringify(res.body);
+  for (const leaked of ['promoDoc', 'promoOwner', 'promoResolved', 'usedCount', 'totalUseLimit']) {
+    assert.ok(!body.includes(leaked), `${leaked} must not reach the browser`);
+  }
+});
+
+
+/* ── The availability grid does not fan out per court ────────── */
+
+test('availability costs one booking query however many courts a venue has', async () => {
+  const owner = await createUser({ role: 'owner' });
+  const venue = await createVenue(owner, {
+    courts: [
+      { name: 'Turf A', sport: 'football', pricePerHour: 1000 },
+      { name: 'Turf B', sport: 'football', pricePerHour: 1200 },
+      { name: 'Court C', sport: 'badminton', pricePerHour: 400 },
+      { name: 'Court D', sport: 'badminton', pricePerHour: 400 },
+      { name: 'Court E', sport: 'tennis', pricePerHour: 800 },
+    ],
+  });
+  const date = dateKey(2);
+
+  // Count the queries this endpoint actually issues against Booking. It used
+  // to run buildAvailability once per court, so a five-court venue meant five
+  // near-identical reads on the busiest public page in the product.
+  const Booking = mongoose.model('Booking');
+  const realFind = Booking.find;
+  let finds = 0;
+  Booking.find = function counted(...args) { finds += 1; return realFind.apply(this, args); };
+
+  try {
+    const res = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.courts.length, 5, 'all five grids came back');
+    assert.ok(res.body.data.courts.every((c) => c.slots.length > 0), 'each grid is populated');
+    assert.equal(finds, 1, `one query for the whole venue, not one per court (saw ${finds})`);
+  } finally {
+    Booking.find = realFind;
+  }
+});
+
+test('a booked slot still shows as taken on the right court only', async () => {
+  const owner = await createUser({ role: 'owner' });
+  const player = await createUser({ role: 'player' });
+  await fundWallet(player.id, 50000);
+  const venue = await createVenue(owner, {
+    courts: [
+      { name: 'Turf A', sport: 'football', pricePerHour: 1000 },
+      { name: 'Turf B', sport: 'football', pricePerHour: 1000 },
+    ],
+  });
+  const date = dateKey(2);
+
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const [courtA, courtB] = grid.body.data.courts;
+  const slot = courtA.slots.find((s) => s.status === 'available');
+
+  const booked = await post('/api/bookings', {
+    venueId: venue._id, courtId: courtA.courtId, date,
+    starts: [slot.start], paymentMethod: 'wallet',
+  }, { token: player.token });
+  assert.equal(booked.status, 201);
+
+  // The shared map is keyed by court; a bug there would mark BOTH courts.
+  const after = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const a = after.body.data.courts.find((c) => c.courtId === courtA.courtId);
+  const b = after.body.data.courts.find((c) => c.courtId === courtB.courtId);
+
+  assert.equal(a.slots.find((s) => s.start === slot.start).status, 'booked');
+  assert.equal(b.slots.find((s) => s.start === slot.start).status, 'available',
+    'the other court is untouched');
+});

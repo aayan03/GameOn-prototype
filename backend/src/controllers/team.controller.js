@@ -48,9 +48,18 @@ export const transferSchema = z.object({
   userId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Pick a valid player'),
 }).strict();
 
-/** A random, unguessable invite code — not a sequential or derivable one. */
+/**
+ * A random, unguessable invite code — not a sequential or derivable one.
+ *
+ * Six bytes, not four. `joinByCode` searches EVERY team on the platform for a
+ * matching pending code, so the space that matters is not "codes on my team"
+ * but "codes anywhere" — and at four bytes a guess had a 1-in-4-billion shot
+ * at each of them at once. That is fine at a hundred open invites and thin at
+ * a hundred thousand. Twelve hex characters still fits the 6-12 the schema
+ * allows and is no harder to paste into a group chat.
+ */
 function makeInviteCode() {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
+  return crypto.randomBytes(6).toString('hex').toUpperCase();
 }
 
 function isCaptain(team, userId) {

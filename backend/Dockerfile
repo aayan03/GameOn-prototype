@@ -11,10 +11,16 @@ WORKDIR /app
 
 # dumb-init reaps zombies and forwards SIGTERM, so the graceful shutdown in
 # server.js actually runs instead of the container being killed outright.
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init tzdata
 
 ENV NODE_ENV=production
 ENV PORT=5000
+# Venue wall-clock time. utils/time.js converts explicitly via APP_TIMEZONE,
+# so this is belt and braces — but alpine has no timezone data at all unless
+# tzdata is installed, and without it an APP_TIMEZONE of "Asia/Kolkata" would
+# silently fall back to UTC inside Intl and take the slot grid with it.
+ENV TZ=Asia/Kolkata
+ENV APP_TIMEZONE=Asia/Kolkata
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package*.json ./

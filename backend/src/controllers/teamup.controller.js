@@ -17,6 +17,16 @@ import logger from '../utils/logger.js';
 // capped regardless of what the client sends.
 const MAX_SHARE_PER_PERSON = 3000;
 
+/**
+ * And a ceiling on what one post can collect in total.
+ *
+ * The per-person cap alone is not a bound on exposure: 30 spots at the
+ * per-person limit is ₹90,000 moved on one person's say-so. A real slot split
+ * between real players does not reach this; a post built to drain wallets
+ * does, immediately.
+ */
+const MAX_POOL_PER_POST = 25000;
+
 const numeric = (schema) => z.preprocess(
   (v) => (v === '' || v === undefined ? undefined : Number(v)), schema
 );
@@ -325,6 +335,14 @@ export const createPost = asyncHandler(async (req, res) => {
   if (perPerson > MAX_SHARE_PER_PERSON) {
     throw ApiError.badRequest(`A player's share cannot exceed ₹${MAX_SHARE_PER_PERSON}`);
   }
+  // What every joiner together could be charged. The host's own share is not
+  // collected, hence spotsNeeded rather than spotsNeeded + 1.
+  if (perPerson * spotsNeeded > MAX_POOL_PER_POST) {
+    throw ApiError.badRequest(
+      `One game cannot collect more than ₹${MAX_POOL_PER_POST.toLocaleString('en-IN')} in total. `
+      + 'Split a larger booking across more than one post.'
+    );
+  }
 
   const post = await TeamUpPost.create({
     host: req.user._id,
@@ -369,7 +387,16 @@ export const cancelPost = asyncHandler(async (req, res) => {
   if (String(post.host) !== String(req.user._id) && req.user.role !== 'admin') {
     throw ApiError.forbidden('Only the host can cancel this game');
   }
-  if (post.status === 'cancelled') throw ApiError.badRequest('This game is already cancelled');
+  // Claim the cancellation before touching any money. Two taps on the host's
+  // phone both passed the status check above and both ran the refund loop
+  // below, paying every share back twice.
+  const claimedCancel = await TeamUpPost.findOneAndUpdate(
+    { _id: post._id, status: { $ne: 'cancelled' } },
+    { $set: { status: 'cancelled' } }
+  );
+  if (!claimedCancel) throw ApiError.badRequest('This game is already cancelled');
+
+  const failedRefunds = [];
 
   // Capture the audience BEFORE emptying the game. Reading
   // `post.confirmedPlayers` after clearing it meant the notification went to
@@ -382,6 +409,40 @@ export const cancelPost = asyncHandler(async (req, res) => {
     // were never in is off.
     ...post.joinRequests.filter((r) => ['pending', 'accepted'].includes(r.status)).map((r) => r.user),
   ];
+
+  /**
+   * Give back anything already collected, BEFORE the game is emptied.
+   *
+   * Settlement takes each player's share into the host's wallet. Cancelling
+   * afterwards used to simply clear `confirmedPlayers` and leave that money
+   * where it was — so settle-then-cancel was a complete, repeatable way to
+   * take other people's balance and keep it, with the platform's own records
+   * showing the game had never happened.
+   *
+   * `settledAmount` is what actually left each wallet, so this returns
+   * exactly that and no more. It runs before the arrays are cleared, because
+   * clearing them is what destroys the evidence of who paid.
+   */
+  const settled = post.joinRequests.filter((r) => (r.settledAmount || 0) > 0);
+  let refunded = 0;
+  for (const r of settled) {
+    try {
+      await wallet.transfer(post.host, r.user, r.settledAmount, {
+        description: `Refund — "${post.title}" was cancelled`,
+        reference: String(post._id),
+      });
+      refunded += r.settledAmount;
+      r.settledAmount = 0;
+      r.settledAt = null;
+    } catch (err) {
+      // The host has already spent it. Say so rather than pretending the
+      // cancellation was clean — this is a real debt and somebody has to know.
+      logger.error('teamup refund failed on cancel', {
+        err, post: String(post._id), player: String(r.user), amount: r.settledAmount,
+      });
+      failedRefunds.push({ user: String(r.user), amount: r.settledAmount });
+    }
+  }
 
   post.status = 'cancelled';
   post.joinRequests.forEach((r) => { if (r.status === 'pending') r.status = 'declined'; });
@@ -402,7 +463,18 @@ export const cancelPost = asyncHandler(async (req, res) => {
     { title: 'Game cancelled', body: `"${post.title}" was cancelled by the host.`, link: '/teamup' }
   );
 
-  return ok(res, { cancelled: true, message: 'Game cancelled. Everyone who asked to join has been told.' });
+  return ok(res, {
+    cancelled: true,
+    refunded,
+    // Surfaced rather than swallowed: a share that could not be returned is a
+    // debt, and the host needs to see it as one.
+    failedRefunds,
+    message: failedRefunds.length
+      ? `Game cancelled. ₹${refunded} was returned, but ${failedRefunds.length} refund(s) could not be paid — your balance was too low. Settle with those players directly.`
+      : refunded > 0
+        ? `Game cancelled and ₹${refunded} returned to the players. Everyone has been told.`
+        : 'Game cancelled. Everyone who asked to join has been told.',
+  });
 });
 
 /**
@@ -541,6 +613,35 @@ export const withdrawJoin = asyncHandler(async (req, res) => {
     if (post.status === 'filled') post.status = 'open';
   }
 
+  /**
+   * Leaving a game you have already been charged for gets your money back.
+   *
+   * Settlement only happens after kickoff, so this is the narrow case of a
+   * player who paid and then left — but without it, withdrawing quietly wrote
+   * off their share, and the host kept it with no record that anything was
+   * owed.
+   */
+  let refunded = 0;
+  const owed = request.settledAmount || 0;
+  if (owed > 0) {
+    try {
+      await wallet.transfer(post.host, req.user._id, owed, {
+        description: `Refund — left "${post.title}"`,
+        reference: String(post._id),
+      });
+      refunded = owed;
+      request.settledAmount = 0;
+      request.settledAt = null;
+    } catch (err) {
+      // The host cannot cover it. The player still leaves — trapping someone
+      // in a game because the host has spent their money is worse — but the
+      // debt is recorded rather than erased.
+      logger.error('teamup refund failed on withdraw', {
+        err, post: String(post._id), player: String(req.user._id), amount: owed,
+      });
+    }
+  }
+
   request.status = 'withdrawn';
   request.respondedAt = new Date();
   await post.save();
@@ -551,7 +652,13 @@ export const withdrawJoin = asyncHandler(async (req, res) => {
     await TeamUpPost.updateOne({ _id: post._id }, { $set: { hostBonusAwarded: false } });
   }
 
-  return ok(res, { withdrawn: true, message: 'You have left this game.' });
+  return ok(res, {
+    withdrawn: true,
+    refunded,
+    message: refunded > 0
+      ? `You have left this game and ₹${refunded} is back in your wallet.`
+      : 'You have left this game.',
+  });
 });
 
 /** PATCH /api/teamup/:id/requests/:requestId — host accepts or declines. */
@@ -652,17 +759,37 @@ export const settleCosts = asyncHandler(async (req, res) => {
   if (!post.costSharing?.enabled || !post.costSharing.perPersonAmount) {
     throw ApiError.badRequest('Cost sharing is not enabled for this game');
   }
+  /**
+   * Nothing is collected before the game has actually kicked off.
+   *
+   * This endpoint moves money out of other people's wallets on one person's
+   * say-so, and it used to do that at any time — the moment the last player
+   * joined, days before anyone was due to play. That made a complete fraud:
+   * post an attractive game, let people join and freeze their share, settle
+   * immediately, then cancel. The money was already gone and nothing gave it
+   * back.
+   *
+   * Waiting for kickoff does not make the host trustworthy, but it means a
+   * player is only ever charged for a game that reached the time it was
+   * advertised for — and by then a cancellation refunds them (see cancelPost).
+   */
+  if (new Date(post.playAt) > new Date()) {
+    throw ApiError.badRequest(
+      'You can collect everyone\'s share once the game has started, not before.'
+    );
+  }
+
   // The status check lives INSIDE the atomic claim. Testing it beforehand
   // leaves a window where a cancel lands between the read and the write and
   // the settle still goes through.
   const claimed = await TeamUpPost.findOneAndUpdate(
-    { _id: post._id, costSettledAt: null, status: { $in: ['open', 'filled'] } },
+    { _id: post._id, costSettledAt: null, status: { $in: ['open', 'filled', 'expired', 'completed'] }, playAt: { $lte: new Date() } },
     { $set: { costSettledAt: new Date() } },
     { new: true }
   );
   if (!claimed) {
     throw ApiError.badRequest(
-      ['cancelled', 'expired'].includes(post.status)
+      ['cancelled'].includes(post.status)
         ? 'This game was cancelled — there is nothing to collect'
         : 'This game has already been settled'
     );
@@ -693,6 +820,13 @@ export const settleCosts = asyncHandler(async (req, res) => {
         description: `TeamUp share — ${post.title}`,
         reference: String(post._id),
       });
+      // Record what actually left this player's wallet, on their own request
+      // entry. A refund later has to know the real figure, not recompute it
+      // from a `perPersonAmount` the host may since have been able to change.
+      await TeamUpPost.updateOne(
+        { _id: post._id, 'joinRequests.user': playerId },
+        { $set: { 'joinRequests.$.settledAmount': share, 'joinRequests.$.settledAt': new Date() } }
+      );
       paid.push(playerId);
       collected += share;
     } catch {

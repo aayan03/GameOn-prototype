@@ -29,7 +29,17 @@ const COMMENTS = [
 
 async function insertVenue(v, ownerId) {
   const { ownerEmail: _ownerEmail, lat, lng, ...rest } = v;
-  return Venue.create({ ...rest, owner: ownerId, location: { type: 'Point', coordinates: [lng, lat] } });
+  return Venue.create({
+    ...rest,
+    owner: ownerId,
+    location: { type: 'Point', coordinates: [lng, lat] },
+    // Stated outright rather than inherited from the schema default. Demo
+    // data is meant to be visible immediately, but "visible" is now something
+    // a venue has to be granted rather than something it starts with — see
+    // the note on Venue.moderationStatus.
+    moderationStatus: 'approved',
+    isActive: true,
+  });
 }
 
 /**

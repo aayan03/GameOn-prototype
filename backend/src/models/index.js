@@ -8,3 +8,5 @@ export { default as Transaction } from './Transaction.js';
 export { default as Promo } from './Promo.js';
 export { default as Payout } from './Payout.js';
 export { default as Notification } from './Notification.js';
+export { default as RevokedToken } from './RevokedToken.js';
+export { default as PromoRedemption } from './PromoRedemption.js';

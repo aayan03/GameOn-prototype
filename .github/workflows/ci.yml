@@ -7,7 +7,7 @@ on:
 
 jobs:
   backend:
-    name: Backend — lint, unit, integration
+    name: Backend — lint, unit, integration (node ${{ matrix.node-version }}, TZ ${{ matrix.tz }})
     runs-on: ubuntu-latest
     # Both ends of what package.json engines promises. A single version hides
     # exactly the class of bug that broke this build: `node --test` takes a
@@ -18,6 +18,16 @@ jobs:
       fail-fast: false
       matrix:
         node-version: [20, 22]
+        # The venue clock is Asia/Kolkata; the server clock deliberately is
+        # not. Every real host (Render, Railway, Fly, node:*-alpine) runs UTC,
+        # and the whole slot layer was 5.5 hours out there while passing on a
+        # developer machine set to IST. Running the suite under a mismatched
+        # TZ is what makes that class of bug fail in CI rather than in
+        # production.
+        tz: ['UTC', 'America/Los_Angeles']
+    env:
+      TZ: ${{ matrix.tz }}
+      APP_TIMEZONE: Asia/Kolkata
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

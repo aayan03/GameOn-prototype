@@ -1,4 +1,4 @@
-import { Booking, Promo } from '../models/index.js';
+import { Booking, Promo, PromoRedemption } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import {
   toMinutes, toHHMM, toLabel, dayOfWeek, toDate, isPeak,
@@ -85,7 +85,31 @@ export function priceFor(court, dateKey, startMinutes, slotMins) {
  * already taken. A slot is `available` only if nothing holds it and it hasn't
  * already passed.
  */
-export async function buildAvailability(venue, court, dateKey) {
+/**
+ * Every live booking at a venue on one date, keyed "<courtId>-<startMinutes>".
+ *
+ * One query for the whole venue rather than one per court. The availability
+ * endpoint is public, is the busiest page in the product, and called
+ * buildAvailability once per court in a `Promise.all` — so a venue with six
+ * courts fired six near-identical queries on every load, and the owner
+ * calendar did the same again on top of its own.
+ */
+export async function takenSlotsFor(venue, dateKey) {
+  const rows = await Booking.find({
+    venue: venue._id,
+    date: dateKey,
+    slotLocked: true,
+  }).select('court startMinutes status').lean();
+
+  return new Map(rows.map((b) => [`${b.court}-${b.startMinutes}`, b.status]));
+}
+
+/**
+ * `taken` is the shared map from takenSlotsFor. It stays optional so a single
+ * caller that genuinely wants one court still works — it just pays for its
+ * own query.
+ */
+export async function buildAvailability(venue, court, dateKey, taken = null) {
   const dow = dayOfWeek(dateKey);
   const hours = venue.operatingHours?.find((h) => h.day === dow);
   const slotMins = venue.slotDurationMins || 60;
@@ -97,14 +121,12 @@ export async function buildAvailability(venue, court, dateKey) {
   const open = toMinutes(hours.open);
   const close = toMinutes(hours.close);
 
-  // Every live booking for this court on this date, in one query.
-  const taken = await Booking.find({
-    court: court._id,
-    date: dateKey,
-    slotLocked: true,
-  }).select('startMinutes endMinutes status').lean();
-
-  const takenStarts = new Map(taken.map((b) => [b.startMinutes, b.status]));
+  const takenMap = taken || await takenSlotsFor(venue, dateKey);
+  const takenStarts = new Map();
+  for (const [key, status] of takenMap) {
+    const [courtId, start] = key.split('-');
+    if (courtId === String(court._id)) takenStarts.set(Number(start), status);
+  }
 
   const isToday = dateKey === todayKey();
   const nowMins = minutesNow();
@@ -175,6 +197,58 @@ async function assertPromoUsable(promo, code, userId) {
   if (promo.doc && promo.doc.totalUseLimit !== null && promo.doc.usedCount >= promo.doc.totalUseLimit) {
     throw ApiError.badRequest('That code has been fully claimed');
   }
+}
+
+/**
+ * Claims one use of a promo code for this user, atomically.
+ *
+ * `assertPromoUsable` above is an advisory check: it gives the quote endpoint
+ * a good error message, and it is a read, so two bookings racing each other
+ * both pass it. This is the real gate. The cap lives inside the update
+ * filter, so the database decides and the loser matches nothing.
+ *
+ * Returns a release handle, because a claim taken for a booking that then
+ * fails to write has to be given back.
+ */
+export async function claimPromoUse(promo, code, userId) {
+  if (!promo || !userId) return { release: async () => {} };
+
+  const upper = String(code).trim().toUpperCase();
+  const promoOwner = promo.doc?.owner || null;
+  // firstBookingOnly is a one-shot code by definition; `assertPromoUsable`
+  // has already checked the "no bookings yet" half.
+  const limit = promo.firstBookingOnly ? 1 : promo.maxUses;
+  if (!limit) return { release: async () => {} };
+
+  const key = { user: userId, code: upper, promoOwner };
+
+  // Make sure the counter exists before trying to increment it under a
+  // condition — an upsert whose filter contains the condition would insert a
+  // second row the moment the condition failed, which the unique index would
+  // then reject as a 409 rather than the honest "you have used this" message.
+  await PromoRedemption.updateOne(key, { $setOnInsert: { count: 0 } }, { upsert: true });
+
+  const claimed = await PromoRedemption.findOneAndUpdate(
+    { ...key, count: { $lt: limit } },
+    { $inc: { count: 1 } },
+    { new: true }
+  );
+
+  if (!claimed) {
+    throw ApiError.badRequest(
+      `You have already used ${upper} the maximum number of times`
+    );
+  }
+
+  return {
+    release: async () => {
+      // Never below zero, in case a release somehow runs twice.
+      await PromoRedemption.updateOne(
+        { ...key, count: { $gt: 0 } },
+        { $inc: { count: -1 } }
+      ).catch(() => { /* the booking already failed; do not mask that error */ });
+    },
+  };
 }
 
 export async function quoteBooking({ venue, court, dateKey, starts, promoCode, tierKey = 'rookie', userId = null }) {
@@ -249,6 +323,10 @@ export async function quoteBooking({ venue, court, dateKey, starts, promoCode, t
     // code could be redeemed without end.
     promoOwner: promo?.doc?.owner || null,
     promoDoc: promo?.doc || null,
+    // The resolved promo, so createBooking can take an atomic claim on it.
+    // Stripped from the /quote response alongside promoDoc — it carries the
+    // owner's internal caps.
+    promoResolved: promo || null,
     grossFee,
     platformFee,
     tierFeeSaved,

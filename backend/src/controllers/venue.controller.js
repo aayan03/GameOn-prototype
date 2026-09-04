@@ -246,6 +246,32 @@ export const getVenue = asyncHandler(async (req, res) => {
     throw ApiError.notFound('Venue not found');
   }
 
+  /**
+   * Strip the venue's private side before it leaves the server.
+   *
+   * This route is reachable without a token and returned the raw document,
+   * which carries several things a visitor has no business seeing:
+   *
+   *   commissionPercent  what this venue pays the platform — a competitor's
+   *                      first question, and the owner's own commercial terms
+   *   blackouts          exactly when the pitch is out of service, with the
+   *                      free-text reason the owner typed for themselves
+   *   moderationNote /   the internal review trail, including which admin
+   *   moderatedBy        made the call
+   *
+   * The owner and admins still see everything; the note is for them.
+   */
+  const isInsider = viewerOwns || req.user?.role === 'admin';
+  const venueOut = venue.toObject();
+  if (!isInsider) {
+    delete venueOut.commissionPercent;
+    delete venueOut.blackouts;
+    delete venueOut.moderationNote;
+    delete venueOut.moderatedBy;
+    delete venueOut.moderatedAt;
+    delete venueOut.__v;
+  }
+
   const reviews = await Review.find({ venue: venue._id, isVisible: true })
     .populate('user', 'name avatar').sort({ createdAt: -1 }).limit(10).lean();
 
@@ -253,7 +279,7 @@ export const getVenue = asyncHandler(async (req, res) => {
     ? req.user.favorites.some((f) => f.toString() === venue._id.toString())
     : false;
 
-  return ok(res, { venue, reviews, isFavorite });
+  return ok(res, { venue: venueOut, reviews, isFavorite });
 });
 
 /** POST /api/venues — owners only. */

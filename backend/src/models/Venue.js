@@ -124,19 +124,31 @@ const venueSchema = new mongoose.Schema(
     // because we have no agreement with the venue yet.
     isClaimed: { type: Boolean, default: true },
 
-    // Anyone can register as an "owner", so a listing from an unverified
-    // account is held for review before it appears in public discovery.
-    // Approve with:  db.venues.updateOne({_id}, {$set:{moderationStatus:'approved', isActive:true}})
+    /**
+     * Anyone can register as an "owner", so a listing from an unverified
+     * account is held for review before it appears in public discovery.
+     *
+     * The default is 'pending' — the SAFE end. It used to be 'approved',
+     * which was fine only because every path that creates a venue happened to
+     * set the field explicitly. That is not a property the schema enforced,
+     * it was a coincidence maintained by hand, and the failure mode of
+     * getting it wrong is a stranger's unreviewed listing taking real
+     * bookings and real money.
+     *
+     * Approve with:  db.venues.updateOne({_id}, {$set:{moderationStatus:'approved', isActive:true}})
+     */
     moderationStatus: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
-      default: 'approved',   // seeds and verified owners publish immediately
+      default: 'pending',
       index: true,
     },
     moderationNote: { type: String, maxlength: 300, default: '' },
     moderatedAt: { type: Date, default: null },
     moderatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    isActive: { type: Boolean, default: true, index: true },
+    // Same reasoning as moderationStatus: a listing is live only once
+    // something says so, never by default.
+    isActive: { type: Boolean, default: false, index: true },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

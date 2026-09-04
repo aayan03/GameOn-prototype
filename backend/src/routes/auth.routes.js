@@ -10,6 +10,11 @@ router.post('/register', registerLimiter, validate(ctrl.registerSchema), ctrl.re
 router.post('/login', authLimiter, validate(ctrl.loginSchema), ctrl.login);
 router.post('/refresh', authLimiter, ctrl.refresh);
 
+// Unauthenticated on purpose — see the note on the controller. Someone whose
+// access token has already expired still needs their refresh token revoked,
+// and a logout that 401s leaves the session alive.
+router.post('/logout', authLimiter, ctrl.logout);
+
 // Reset is unauthenticated by definition, so both halves are rate limited.
 // `authLimiter` skips successful requests, which is wrong here — forgot-password
 // answers 200 whether or not the address exists, so every attempt must count.
@@ -19,5 +24,6 @@ router.post('/reset-password', passwordResetLimiter, validate(ctrl.resetPassword
 router.get('/me', protect, ctrl.me);
 router.patch('/me', protect, validate(ctrl.updateMeSchema), ctrl.updateMe);
 router.post('/change-password', protect, authLimiter, validate(ctrl.changePasswordSchema), ctrl.changePassword);
+router.post('/logout-all', protect, authLimiter, ctrl.logoutAll);
 
 export default router;

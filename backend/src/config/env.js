@@ -196,6 +196,17 @@ export function validateEnv() {
     for (const o of env.CORS_ORIGINS) {
       if (/^https?:\/\/\*\./.test(o)) {
         fatal.push(`CORS_ORIGINS entry "${o}" wildcards an entire domain. Put a prefix before the *, e.g. https://myapp-*.vercel.app`);
+      } else if (o.includes('*')) {
+        // A prefixed wildcard is far better than a bare one, and still not
+        // nothing: `https://gameon-*.vercel.app` is satisfied by any preview
+        // URL — including one an attacker deploys under a name they chose.
+        // Fine while previews need to reach the API; worth removing once the
+        // production origin is the only one that does.
+        warn.push(
+          `CORS_ORIGINS entry "${o}" is a wildcard. Anyone who can deploy a hostname matching `
+          + 'it gets credentialed access to this API. Keep it only while you need preview '
+          + 'deployments to work, and list the exact production origin otherwise.'
+        );
       }
     }
 
@@ -281,6 +292,22 @@ export function validateEnv() {
     if (!env.SENTRY_DSN) {
       warn.push('SENTRY_DSN is not set — unexpected errors will only appear in logs.');
     }
+
+    // Say this out loud once at boot rather than letting someone discover it
+    // during an incident. The limiter buckets live in this process's memory,
+    // so they reset on every deploy and every cold start, and two instances
+    // each enforce the full limit independently — the effective ceiling is
+    // the configured one times the number of instances.
+    //
+    // The defences that actually guard an ACCOUNT do not depend on this: the
+    // login throttle, the reset cooldown, the promo claim and every wallet
+    // filter are all in the database and shared correctly. This is the coarse
+    // per-IP flood ceiling only.
+    warn.push(
+      'Rate limiting is in-process. Buckets reset on restart and are NOT shared between '
+      + 'instances, so scaling past one dyno multiplies the effective limit. Move to a '
+      + 'shared store (Redis) before running more than one.'
+    );
   } else {
     if (INSECURE_DEFAULTS.includes(env.JWT_SECRET)) {
       warn.push('Using a development JWT secret. Set a real one before deploying.');

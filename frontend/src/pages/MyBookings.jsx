@@ -153,6 +153,13 @@ export default function MyBookings() {
               onReview={tab === 'past' ? setReviewTarget : null}
             />
           ))}
+          {/* The API caps how far back it reads. Say so, rather than showing a
+              partial history as though it were the whole thing. */}
+          {tab === 'past' && data.hasMore && (
+            <p className="text-faint" style={{ textAlign: 'center', padding: '8px 0' }}>
+              Showing your most recent games. Older bookings are not listed here.
+            </p>
+          )}
         </div>
       ) : (
         <div className="card card-pad empty">

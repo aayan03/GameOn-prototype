@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import { Venue, Booking, User, Promo } from '../models/index.js';
+import { shortRef } from '../models/Booking.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok, created } from '../utils/response.js';
 import { BOOKING_STATUS, BOOKING_MODES, LOYALTY, ROLES } from '../config/constants.js';
-import { buildAvailability, quoteBooking, refundFor, lookupPromo } from '../services/booking.service.js';
+import { buildAvailability, quoteBooking, refundFor, lookupPromo, claimPromoUse, takenSlotsFor } from '../services/booking.service.js';
 import * as wallet from '../services/wallet.service.js';
 import * as loyalty from '../services/loyalty.service.js';
 import * as notify from '../services/notification.service.js';
@@ -139,8 +140,11 @@ export const getAvailability = asyncHandler(async (req, res) => {
   const courts = venue.courts.filter((c) => c.isActive !== false && (!courtId || String(c._id) === courtId));
   if (!courts.length) throw ApiError.notFound('No bookable courts found');
 
+  // One query for the whole venue, shared by every court's grid below.
+  const taken = await takenSlotsFor(venue, date);
+
   const grids = await Promise.all(courts.map(async (court) => {
-    const grid = await buildAvailability(venue, court, date);
+    const grid = await buildAvailability(venue, court, date, taken);
     return {
       courtId: court._id,
       courtName: court.name,
@@ -180,7 +184,7 @@ export const quote = asyncHandler(async (req, res) => {
   // `promoDoc` is the whole Promo record — the owner's id, its running
   // `usedCount`, its global cap. That is internal bookkeeping the quote
   // endpoint has no business handing to a browser.
-  const { promoDoc: _promoDoc, promoOwner: _promoOwner, ...publicQuote } = q;
+  const { promoDoc: _promoDoc, promoOwner: _promoOwner, promoResolved: _promoResolved, ...publicQuote } = q;
 
   return ok(res, {
     ...publicQuote,
@@ -227,7 +231,19 @@ export const createBooking = asyncHandler(async (req, res) => {
   const awaitingPayment = paymentMethod === 'gateway';
   const confirmedNow = isInstant && !awaitingPayment;
   const status = confirmedNow ? BOOKING_STATUS.CONFIRMED : BOOKING_STATUS.PENDING;
-  const groupRef = 'GRP' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
+  /**
+   * Take the promo claim BEFORE writing any rows.
+   *
+   * `quoteBooking` re-checks the code, but that check is a read: two bookings
+   * submitted together both saw "you have used this 0 times" and both got the
+   * discount. This is the atomic half — and it runs first, so a code that is
+   * exhausted costs nothing but a failed claim rather than a set of booking
+   * rows that then have to be unwound.
+   */
+  const promoClaim = await claimPromoUse(q.promoResolved, promoCode, req.user._id);
+
+  // Same reasoning as bookingRef — see the note on Booking.shortRef.
+  const groupRef = shortRef('GRP');
 
   // Spread the discount and fee proportionally across the slots so each
   // document's totalAmount sums back to the quoted total.
@@ -276,6 +292,9 @@ export const createBooking = asyncHandler(async (req, res) => {
     // before bailing out, or the user is charged nothing but the slots stay
     // locked forever.
     await Booking.deleteMany({ groupRef }).catch(() => {});
+    // And give the promo use back, or a slot lost to a race silently burns
+    // one of the customer's redemptions.
+    await promoClaim.release();
 
     // The unique partial index fired — someone took a slot in the
     // milliseconds between the quote and the write.
@@ -302,7 +321,7 @@ export const createBooking = asyncHandler(async (req, res) => {
         description: `${venue.name} — ${court.name}, ${q.slots.length} slot(s)`,
       });
 
-      const txnId = 'TXN' + Date.now().toString(36).toUpperCase();
+      const txnId = shortRef('TXN');
       // A single aggregation-pipeline update, so `amountPaid` is written in
       // the same operation that marks the rows paid. The earlier two-phase
       // version could die between them and leave a paid booking with
@@ -323,6 +342,7 @@ export const createBooking = asyncHandler(async (req, res) => {
     } catch (err) {
       // Payment failed — release the slots rather than holding them hostage.
       await Booking.updateMany({ groupRef }, { $set: { status: BOOKING_STATUS.CANCELLED, slotLocked: false } });
+      await promoClaim.release();
       throw ApiError.badRequest(err.message || 'Payment failed. The slots have been released.');
     }
   }
@@ -400,11 +420,29 @@ export const createBooking = asyncHandler(async (req, res) => {
 });
 
 /** GET /api/bookings — the signed-in user's bookings, grouped and split. */
+/**
+ * The history is bounded.
+ *
+ * This loaded EVERY row this user has ever created and grouped them in
+ * memory. One slot is one document, so a regular player who books three
+ * hours a week reaches four figures inside a year, and the response grows
+ * without limit for as long as the account exists. The index makes the query
+ * fast; nothing made the result small.
+ *
+ * Generous enough that a normal account never notices — and `hasMore` says so
+ * honestly when one does, rather than silently truncating.
+ */
+const MY_BOOKINGS_LIMIT = 400;
+
 export const myBookings = asyncHandler(async (req, res) => {
   const rows = await Booking.find({ user: req.user._id })
     .populate('venue', 'name slug address images bookingMode cancellationPolicy manualContact')
     .sort({ startsAt: -1 })
+    .limit(MY_BOOKINGS_LIMIT + 1)
     .lean();
+
+  const hasMore = rows.length > MY_BOOKINGS_LIMIT;
+  if (hasMore) rows.length = MY_BOOKINGS_LIMIT;
 
   const groups = groupBookings(rows);
   const now = Date.now();
@@ -426,7 +464,14 @@ export const myBookings = asyncHandler(async (req, res) => {
 
   upcoming.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
 
-  return ok(res, { upcoming, past, walletBalance: req.user.walletBalance });
+  return ok(res, {
+    upcoming,
+    past,
+    // True when older bookings exist beyond the window. The UI can say so
+    // instead of quietly presenting a partial history as a complete one.
+    hasMore,
+    walletBalance: req.user.walletBalance,
+  });
 });
 
 /** GET /api/bookings/:groupRef */
@@ -597,23 +642,96 @@ export const decideBooking = asyncHandler(async (req, res) => {
   if (!pending.length) throw ApiError.badRequest('This request has already been handled');
 
   if (decision === 'reject') {
-    for (const b of pending) {
-      b.status = BOOKING_STATUS.REJECTED;
-      b.slotLocked = false;
-      await b.save();
+    // One conditional update, not a save() per row. Two owners tapping
+    // Decline at once both passed the check above and both ran the refund
+    // below; now the database picks a winner and only the call that actually
+    // flipped rows moves money.
+    const flip = await Booking.updateMany(
+      { groupRef: req.params.groupRef, status: BOOKING_STATUS.PENDING },
+      { $set: { status: BOOKING_STATUS.REJECTED, slotLocked: false } }
+    );
+    if (!flip.modifiedCount) {
+      throw ApiError.conflict('That request changed while you were declining it. Reload and try again.');
     }
+
+    // A manual booking CAN already be paid: the player may have completed a
+    // card/UPI checkout while the request sat in the queue. Declining it
+    // without returning that money left the player charged for a slot the
+    // venue refused, with the notification cheerfully telling them nothing
+    // had been taken. Refund in full — the venue said no, so no cancellation
+    // policy applies.
+    //
+    // Summed from the rows THIS call actually rejected, re-read after the
+    // flip, rather than from the `pending` snapshot taken before it. A cancel
+    // landing in between flips some of those rows to CANCELLED, and the stale
+    // snapshot would still have counted their money — refunding more than was
+    // rejected, on top of whatever the cancellation had already paid back.
+    const rejected = await Booking.find({
+      groupRef: req.params.groupRef,
+      status: BOOKING_STATUS.REJECTED,
+      'cancellation.refundStatus': 'none',
+    }).select('_id payment pointsAwarded').lean();
+
+    const paid = rejected.reduce((sum, b) => sum + (b.payment?.amountPaid || 0), 0);
+    if (paid > 0) {
+      await wallet.credit(rows[0].user, paid, {
+        type: 'refund',
+        booking: pending[0],
+        description: `Refund — ${venue.name} declined the request`,
+      });
+      await Booking.updateMany(
+        { groupRef: req.params.groupRef, status: BOOKING_STATUS.REJECTED },
+        { $set: { 'cancellation.refundStatus': 'processed' } }
+      );
+      await Booking.updateOne(
+        { _id: rejected[0]._id },
+        { $set: { 'cancellation.refundAmount': paid } }
+      );
+    }
+
+    // Points can only have been awarded if the payment went through. Take
+    // them back with the money, or a declined booking leaves free tier
+    // progress behind it. Same rows as the refund, for the same reason.
+    const earned = rejected.reduce((sum, b) => sum + (b.pointsAwarded || 0), 0);
+    if (earned > 0) {
+      await loyalty.revoke(rows[0].user, earned, { reason: `Declined — ${venue.name}` });
+      await Booking.updateMany({ groupRef: req.params.groupRef }, { $set: { pointsAwarded: 0 } });
+    }
+
     await notify.notify(rows[0].user, 'booking_rejected', {
-      body: `${venue.name} could not take your booking. Nothing was charged.`,
+      body: paid > 0
+        ? `${venue.name} could not take your booking. ₹${paid} is back in your wallet.`
+        : `${venue.name} could not take your booking. Nothing was charged.`,
       link: '/bookings',
     });
-    return ok(res, { status: 'rejected', message: 'Request declined and the slot released.' });
+    return ok(res, {
+      status: 'rejected',
+      refunded: paid,
+      message: paid > 0
+        ? `Request declined, the slot released, and ₹${paid} refunded to the player.`
+        : 'Request declined and the slot released.',
+    });
   }
 
   // Confirming a manual booking is when payment is actually taken.
   const player = await User.findById(rows[0].user);
   const total = pending.reduce((s, b) => s + b.totalAmount, 0);
 
-  const chargeable = pending[0].payment.method !== 'pay_at_venue' && total > 0;
+  const method = pending[0].payment.method;
+  // Already settled — through Razorpay, or by a webhook that landed before
+  // the owner got to the request. Confirming must not collect it a SECOND
+  // time. Asking only "which method is this?" charged the wallet again for a
+  // card payment that had already gone through: the player picked UPI, paid
+  // Razorpay, and the owner tapping Confirm silently took the same amount out
+  // of their GameOn balance.
+  const alreadyPaid = pending[0].payment.status === 'paid';
+
+  // Cash at the gate is settled by the owner later, via /settle.
+  // A gateway booking is collected by Razorpay, never from the wallet — the
+  // player chose card or UPI, and debiting their balance instead is the same
+  // lie the mock_upi method was removed for.
+  const collectsFromWallet = method !== 'pay_at_venue' && method !== 'gateway';
+  const chargeable = collectsFromWallet && !alreadyPaid && total > 0;
   let charged = false;
 
   if (chargeable) {
@@ -631,7 +749,12 @@ export const decideBooking = asyncHandler(async (req, res) => {
     charged = true;
   }
 
-  const txnId = 'TXN' + Date.now().toString(36).toUpperCase();
+  // An unpaid gateway booking is confirmed, but the money is still owed
+  // through the gateway. Say so plainly rather than confirming it as though
+  // it were settled — the player still has to finish checkout.
+  const awaitingGateway = method === 'gateway' && !alreadyPaid && total > 0;
+
+  const txnId = shortRef('TXN');
 
   // Conditional update rather than save(): a cancel landing between the read
   // and the write must not be overwritten, and two confirms must not both
@@ -675,11 +798,20 @@ export const decideBooking = asyncHandler(async (req, res) => {
   }
 
   await notify.notify(player._id, 'booking_confirmed', {
-    body: `${venue.name} confirmed your booking. Tap for your ticket.`,
+    title: awaitingGateway ? 'Confirmed — finish your payment' : undefined,
+    body: awaitingGateway
+      ? `${venue.name} confirmed your booking. Tap to complete the payment and get your ticket.`
+      : `${venue.name} confirmed your booking. Tap for your ticket.`,
     link: `/bookings/${req.params.groupRef}`,
   });
 
-  return ok(res, { status: 'confirmed', message: 'Booking confirmed. The player has been notified.' });
+  return ok(res, {
+    status: 'confirmed',
+    awaitingPayment: awaitingGateway,
+    message: awaitingGateway
+      ? 'Booking confirmed. The player still has to complete their card/UPI payment — they have been told.'
+      : 'Booking confirmed. The player has been notified.',
+  });
 });
 
 /**

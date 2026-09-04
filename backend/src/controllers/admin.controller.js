@@ -211,17 +211,43 @@ export const listUsers = asyncHandler(async (req, res) => {
 });
 
 /**
- * POST /api/admin/payouts/run — closes the current period for every owner.
- * Idempotent: rerunning the same period updates rather than duplicating,
+ * The most recent Monday 00:00 UTC, which is where a settlement week ends.
+ *
+ * Exported so the tests can assert the property that matters — that the
+ * boundary does not move when the job runs on a different day.
+ */
+export function lastWeekBoundary(now = new Date()) {
+  const d = new Date(now);
+  d.setUTCHours(0, 0, 0, 0);
+  // getUTCDay: 0 = Sunday. Step back to Monday; a Monday stays put.
+  const daysSinceMonday = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - daysSinceMonday);
+  return d;
+}
+
+/**
+ * POST /api/admin/payouts/run — closes the last completed week for every owner.
+ * Idempotent: rerunning updates the same period rather than duplicating it,
  * and periods already marked paid are never touched.
  */
 export const runPayouts = asyncHandler(async (req, res) => {
-  // Period boundaries must be STABLE, or the unique index never matches and
-  // every run creates a fresh overlapping payout — paying the same bookings
-  // again and again. Snap to UTC midnight and to whole weeks.
-  const midnight = new Date();
-  midnight.setUTCHours(0, 0, 0, 0);
-  const periodEnd = midnight;
+  /**
+   * Period boundaries must be STABLE, or the unique index never matches and
+   * every run creates a fresh OVERLAPPING payout.
+   *
+   * The comment here used to promise "UTC midnight and whole weeks" and only
+   * deliver the first half: `periodEnd` was today's midnight and
+   * `periodStart` seven days before it, so a run on Tuesday covered
+   * [Tue-7, Tue) and a run on Wednesday covered [Wed-7, Wed). Six of those
+   * days are in both. The tuples differ, so the unique index does not collide
+   * — two payouts are created, and if both are marked paid the owner is paid
+   * twice for the same six days.
+   *
+   * Snapping the END to a fixed weekday makes the period the same whichever
+   * day of the week the job runs on: an extra run updates the existing row
+   * instead of minting a second overlapping one.
+   */
+  const periodEnd = lastWeekBoundary();
   const periodStart = new Date(periodEnd.getTime() - 7 * 86400000);
   const commissionPercent = env.PLATFORM_COMMISSION_PERCENT;
 
