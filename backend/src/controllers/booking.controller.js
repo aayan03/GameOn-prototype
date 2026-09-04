@@ -11,6 +11,7 @@ import * as wallet from '../services/wallet.service.js';
 import * as loyalty from '../services/loyalty.service.js';
 import * as notify from '../services/notification.service.js';
 import * as payments from '../services/payment.service.js';
+import * as refunds from '../services/refund.service.js';
 import env, { isProd } from '../config/env.js';
 import { isValidDateKey, todayKey, toLabel, toDate } from '../utils/time.js';
 import { cleanText } from '../utils/sanitize.js';
@@ -558,44 +559,45 @@ export const cancelBooking = asyncHandler(async (req, res) => {
 
   const payable = Math.max(0, refund.amount - pointsShortfallRupees);
 
-  // Record what was actually refunded, on every row of the group, and only
-  // after the true figure is known.
-  await Booking.updateMany(
-    { groupRef: req.params.groupRef, status: BOOKING_STATUS.CANCELLED },
-    { $set: { 'cancellation.refundStatus': payable > 0 ? 'processed' : 'none' } }
-  );
-
   const bookingUser = isOwnerOfBooking ? req.user : await User.findById(rows[0].user);
 
-  if (payable > 0) {
-    await Booking.updateOne(
-      { _id: live[0]._id },
-      { $set: { 'cancellation.refundAmount': payable } }
-    );
+  // Money goes back the way it came — see services/refund.service.js. A card
+  // payment is refunded through Razorpay to the card; only a wallet payment
+  // returns to the wallet. This used to credit the wallet unconditionally,
+  // which turned a refund into store credit the customer could never withdraw.
+  const issued = await refunds.issueRefund({
+    groupRef: req.params.groupRef,
+    rows: live,
+    amount: payable,
+    user: bookingUser,
+    description: `Refund — ${venue?.name || 'venue'} (${refund.percent}%)`,
+    reference: live[0].bookingRef || '',
+  });
 
-    // Every payment method other than pay-at-venue settles against the wallet,
-    // so every refund returns there. Refunding to "the original method" when
-    // there is no gateway behind it would simply destroy the user's money.
-    await wallet.credit(bookingUser, payable, {
-      type: 'refund', booking: live[0],
-      description: `Refund — ${venue?.name || 'venue'} (${refund.percent}%)`,
-    });
-  }
+  const where = issued.method === 'gateway'
+    ? 'back to the card or UPI account you paid with, within 5–7 working days'
+    : 'back in your wallet';
 
   await notify.notify(rows[0].user, 'booking_cancelled', {
-    body: payable > 0
-      ? `Your booking at ${venue?.name || 'the venue'} was cancelled. ₹${payable} is back in your wallet.`
+    body: issued.refunded > 0
+      ? `Your booking at ${venue?.name || 'the venue'} was cancelled. ₹${issued.refunded} is ${where}.`
       : `Your booking at ${venue?.name || 'the venue'} was cancelled.`,
     link: '/bookings',
   });
 
   return ok(res, {
     cancelled: true,
-    refund: { ...refund, amount: payable, pointsAdjustment: pointsShortfallRupees },
+    refund: {
+      ...refund,
+      amount: issued.refunded,
+      pointsAdjustment: pointsShortfallRupees,
+      method: issued.method,
+      reference: issued.reference,
+    },
     // The booking's owner, which is not the caller when an admin cancels.
     walletBalance: bookingUser.walletBalance,
-    message: payable > 0
-      ? `Booking cancelled. ₹${payable} is back in your wallet.`
+    message: issued.refunded > 0
+      ? `Booking cancelled. ₹${issued.refunded} is ${where}.`
       : 'Booking cancelled.',
   });
 });
@@ -673,20 +675,19 @@ export const decideBooking = asyncHandler(async (req, res) => {
     }).select('_id payment pointsAwarded').lean();
 
     const paid = rejected.reduce((sum, b) => sum + (b.payment?.amountPaid || 0), 0);
+    let issued = { refunded: 0, method: 'none' };
     if (paid > 0) {
-      await wallet.credit(rows[0].user, paid, {
-        type: 'refund',
-        booking: pending[0],
+      // Back to the card if that is where it came from — same service as a
+      // cancellation, so a declined booking cannot quietly become store credit.
+      const player = await User.findById(rows[0].user);
+      issued = await refunds.issueRefund({
+        groupRef: req.params.groupRef,
+        rows: rejected,
+        amount: paid,
+        user: player,
         description: `Refund — ${venue.name} declined the request`,
+        reference: rejected[0].bookingRef || '',
       });
-      await Booking.updateMany(
-        { groupRef: req.params.groupRef, status: BOOKING_STATUS.REJECTED },
-        { $set: { 'cancellation.refundStatus': 'processed' } }
-      );
-      await Booking.updateOne(
-        { _id: rejected[0]._id },
-        { $set: { 'cancellation.refundAmount': paid } }
-      );
     }
 
     // Points can only have been awarded if the payment went through. Take
@@ -698,17 +699,22 @@ export const decideBooking = asyncHandler(async (req, res) => {
       await Booking.updateMany({ groupRef: req.params.groupRef }, { $set: { pointsAwarded: 0 } });
     }
 
+    const backTo = issued.method === 'gateway'
+      ? 'back to the card or UPI account you paid with, within 5–7 working days'
+      : 'back in your wallet';
+
     await notify.notify(rows[0].user, 'booking_rejected', {
-      body: paid > 0
-        ? `${venue.name} could not take your booking. ₹${paid} is back in your wallet.`
+      body: issued.refunded > 0
+        ? `${venue.name} could not take your booking. ₹${issued.refunded} is ${backTo}.`
         : `${venue.name} could not take your booking. Nothing was charged.`,
       link: '/bookings',
     });
     return ok(res, {
       status: 'rejected',
-      refunded: paid,
-      message: paid > 0
-        ? `Request declined, the slot released, and ₹${paid} refunded to the player.`
+      refunded: issued.refunded,
+      refundMethod: issued.method,
+      message: issued.refunded > 0
+        ? `Request declined, the slot released, and ₹${issued.refunded} refunded to the player.`
         : 'Request declined and the slot released.',
     });
   }

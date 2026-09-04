@@ -11,7 +11,7 @@
 import mongoose from 'mongoose';
 import { connectDB, disconnectDB, isMemoryDB } from '../config/db.js';
 import { User, Venue, Review, Booking, TeamUpPost, Team, Transaction } from '../models/index.js';
-import { owners, players, venues } from './data.js';
+import { owners, players, venues, demoPassword } from './data.js';
 import { lucknowVenues, lucknowOwner } from './lucknow.js';
 import { LOYALTY } from '../config/constants.js';
 import { tierFor } from '../services/loyalty.service.js';
@@ -51,7 +51,15 @@ async function insertVenue(v, ownerId) {
  * `connect: false` reuses a connection the caller already has open.
  */
 export async function seedDatabase({
-  noLucknow = false, lucknowOnly = false, connect = true,
+  /**
+   * Lucknow listings are OPT-IN, not opt-out.
+   *
+   * `noLucknow = false` meant a plain `npm run seed` published real business
+   * names with invented prices and opening hours unless you remembered a
+   * flag. The safe direction is the other way: pass --lucknow (or
+   * SEED_LUCKNOW=true) once you have actually verified them with the venues.
+   */
+  noLucknow = !(process.env.SEED_LUCKNOW === 'true'), lucknowOnly = false, connect = true,
 } = {}) {
   if (connect) await connectDB();
 
@@ -145,7 +153,8 @@ async function run() {
   }
 
   const summary = await seedDatabase({
-    noLucknow: args.includes('--no-lucknow'),
+    // --no-lucknow still works and is now the default; --lucknow opts in.
+    noLucknow: args.includes('--lucknow') ? false : !args.includes('--lucknow-only'),
     lucknowOnly: args.includes('--lucknow-only'),
   });
 
@@ -158,9 +167,10 @@ async function run() {
 
   console.log('\n   Demo logins');
   console.log('   ─────────────────────────────────────────────');
-  console.log('   Player (Elite tier)  aayan@gameon.app      / player123');
-  console.log('   Player (Legend tier) vaishnavi@gameon.app  / player123');
-  console.log('   Venue owner          shivanshu@gameon.app  / owner123\n');
+  console.log(`   Player (Elite tier)  aayan@gameon.app      / ${demoPassword}`);
+  console.log(`   Player (Legend tier) vaishnavi@gameon.app  / ${demoPassword}`);
+  console.log(`   Venue owner          shivanshu@gameon.app  / ${demoPassword}
+`);
 
   await disconnectDB();
   await mongoose.connection.close().catch(() => {});

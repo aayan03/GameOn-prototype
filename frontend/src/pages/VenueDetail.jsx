@@ -242,7 +242,7 @@ export default function VenueDetail() {
                 <div className="row gap-8">
                   <IconCheck style={{ width: 17, height: 17, color: 'var(--success)', flexShrink: 0 }} />
                   <span>
-                    Free cancellation up to <strong>{venue.cancellationPolicy.freeCancellationHours} hours</strong> before your slot — full refund to your wallet.
+                    Free cancellation up to <strong>{venue.cancellationPolicy.freeCancellationHours} hours</strong> before your slot — refunded in full, to however you paid.
                   </span>
                 </div>
                 <div className="row gap-8">

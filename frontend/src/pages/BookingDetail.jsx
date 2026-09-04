@@ -284,7 +284,15 @@ export default function BookingDetail() {
           {isCancelled && booking.cancellation?.refundAmount > 0 && (
             <div className="alert alert-info">
               <IconCheck style={{ width: 18, height: 18, flexShrink: 0 }} />
-              <span>{rupees(booking.cancellation.refundAmount)} was refunded to your wallet.</span>
+              {/* Say where it actually went. A card payment is refunded to the
+                  card now, so "to your wallet" was wrong for exactly the
+                  bookings people are most likely to check. */}
+              <span>
+                {rupees(booking.cancellation.refundAmount)} was refunded
+                {booking.cancellation.refundMethod === 'gateway'
+                  ? ' to the card or UPI account you paid with — allow 5–7 working days.'
+                  : ' to your GameOn wallet.'}
+              </span>
             </div>
           )}
         </div>

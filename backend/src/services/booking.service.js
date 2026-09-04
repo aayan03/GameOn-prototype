@@ -6,6 +6,7 @@ import {
 } from '../utils/time.js';
 import { BOOKING_STATUS } from '../config/constants.js';
 import { discountedFee, bonusBookingDays, pointsForSpend } from './loyalty.service.js';
+import { refundDestination } from './refund.service.js';
 
 export const PLATFORM_FEE_PERCENT = 3;
 
@@ -368,15 +369,26 @@ export function refundFor(booking, venue) {
       message: 'No payment was taken for this booking, so there is nothing to refund.' };
   }
 
+  /**
+   * Say where the money is actually going.
+   *
+   * Both branches below used to promise "back to your wallet" whatever the
+   * customer had paid with — which was true only because every refund WAS
+   * wallet credit. Now that a card payment goes back to the card, the preview
+   * has to say so, or the screen shown before someone cancels contradicts the
+   * refund they then receive.
+   */
+  const where = refundDestination([booking]);
+
   if (hoursUntil >= policy.freeCancellationHours) {
-    return { amount: paid, percent: 100, tier: 'full', hoursUntil,
-      message: `Full refund of ₹${paid} back to your wallet.` };
+    return { amount: paid, percent: 100, tier: 'full', hoursUntil, destination: where.to,
+      message: `Full refund of ₹${paid} ${where.label}${where.to === 'source' ? ', within 5–7 working days' : ''}.` };
   }
 
   if (hoursUntil >= policy.partialRefundHours) {
     const amount = Math.round((paid * policy.partialRefundPercent) / 100);
-    return { amount, percent: policy.partialRefundPercent, tier: 'partial', hoursUntil,
-      message: `${policy.partialRefundPercent}% refund — ₹${amount} back to your wallet.` };
+    return { amount, percent: policy.partialRefundPercent, tier: 'partial', hoursUntil, destination: where.to,
+      message: `${policy.partialRefundPercent}% refund — ₹${amount} ${where.label}${where.to === 'source' ? ', within 5–7 working days' : ''}.` };
   }
 
   return { amount: 0, percent: 0, tier: 'none', hoursUntil,

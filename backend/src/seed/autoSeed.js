@@ -3,7 +3,7 @@
  * Never runs against a database that already has users in it.
  */
 import { User, Venue, Review } from '../models/index.js';
-import { owners, players, venues } from './data.js';
+import { owners, players, venues, demoPassword } from './data.js';
 import { lucknowVenues, lucknowOwner } from './lucknow.js';
 import { LOYALTY } from '../config/constants.js';
 import { tierFor } from '../services/loyalty.service.js';
@@ -31,7 +31,19 @@ async function insertVenue(v, ownerId) {
   });
 }
 
-export default async function autoSeed({ includeLucknow = true } = {}) {
+/**
+ * `includeLucknow` defaults to FALSE now.
+ *
+ * Those entries carry real Lucknow business names with invented prices,
+ * coordinates and opening hours — see the header of seed/lucknow.js.
+ * Defaulting them on meant every fresh database, including anything a
+ * demo or a deploy touched, published fabricated rates under other
+ * people's trading names. Opting in is the right way round: set
+ * SEED_LUCKNOW=true if you have actually verified them.
+ */
+export default async function autoSeed({
+  includeLucknow = process.env.SEED_LUCKNOW === 'true',
+} = {}) {
   // Only ever runs against a throwaway development database — server.js gates
   // this on isMemoryDB(), and this is the second line of defence.
   if (process.env.NODE_ENV === 'production') return false;
@@ -76,8 +88,8 @@ export default async function autoSeed({ includeLucknow = true } = {}) {
 
   console.log(`🌱 Auto-seeded ${venues.length} demo venues + ${lucknowCount} real Lucknow listings.`);
   if (lucknowCount) {
-    console.log('   ⚠️  Lucknow entries are unverified public listings — read src/seed/lucknow.js before launch.');
+    console.log('   ⚠️  Lucknow entries are UNVERIFIED listings for real businesses — invented prices and hours. Read src/seed/lucknow.js.');
   }
-  console.log('   Demo login → aayan@gameon.app / player123');
+  console.log(`   Demo login → aayan@gameon.app / ${demoPassword}`);
   return true;
 }

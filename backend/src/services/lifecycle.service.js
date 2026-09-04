@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Booking, TeamUpPost, User, Venue, Review } from '../models/index.js';
 import { BOOKING_STATUS } from '../config/constants.js';
 import * as notify from './notification.service.js';
-import * as wallet from './wallet.service.js';
+import * as refunds from './refund.service.js';
 import * as loyalty from './loyalty.service.js';
 import logger from '../utils/logger.js';
 
@@ -201,25 +201,22 @@ async function expireStaleRequests(now) {
     const paid = group.reduce((sum, b) => sum + (b.payment?.amountPaid || 0), 0);
     const venue = await Venue.findById(rows[0].venue).select('name').lean();
 
+    let issued = { refunded: 0, method: 'none' };
     if (paid > 0) {
-      // Move the money FIRST. Stamping `refundStatus: 'processed'` before the
-      // credit meant a failed credit left a booking that claimed to be
-      // refunded, with no transaction behind it and no way to retry — the
-      // flip filter requires PENDING, which it no longer is.
-      await wallet.credit(rows[0].user, paid, {
-        type: 'refund',
+      // Through the shared refund service, so a card payment goes back to the
+      // card here too. The service claims the refund on the document before
+      // moving anything, which is also what stops this job — which can run on
+      // several instances at once — paying the same expiry twice.
+      const player = await User.findById(rows[0].user);
+      issued = await refunds.issueRefund({
+        groupRef,
+        rows: group,
+        amount: paid,
+        user: player,
         description: `Refund — ${venue?.name || 'venue'} did not confirm`,
         reference: rows[0].bookingRef || '',
       });
-      await Booking.updateMany(
-        { groupRef, status: BOOKING_STATUS.EXPIRED },
-        { $set: { 'cancellation.refundStatus': 'processed' } }
-      );
-      await Booking.updateOne(
-        { _id: rows[0]._id },
-        { $set: { 'cancellation.refundAmount': paid } }
-      );
-      refunded += paid;
+      refunded += issued.refunded;
     }
 
     // A pending booking should never have earned points, but if any path ever
@@ -233,8 +230,9 @@ async function expireStaleRequests(now) {
 
     await notify.notify(rows[0].user, 'booking_rejected', {
       title: 'Request expired',
-      body: paid > 0
-        ? `${venue?.name || 'The venue'} did not confirm in time. Your slot was released and ₹${paid} is back in your wallet.`
+      body: issued.refunded > 0
+        ? `${venue?.name || 'The venue'} did not confirm in time. Your slot was released and ₹${issued.refunded} is `
+          + `${issued.method === 'gateway' ? 'on its way back to the card or UPI account you paid with' : 'back in your wallet'}.`
         : `${venue?.name || 'The venue'} did not confirm in time, so your slot was released. Nothing was charged.`,
       link: '/bookings',
     });

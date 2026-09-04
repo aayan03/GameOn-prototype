@@ -96,11 +96,12 @@ router.post('/seed', asyncHandler(async (req, res) => {
 
   return ok(res, {
     ...summary,
-    warning: 'Demo accounts use passwords published in this repository. Change or delete them before this handles anything real.',
-    logins: {
-      player: 'aayan@gameon.app / player123',
-      owner: 'shivanshu@gameon.app / owner123',
-    },
+    warning: 'These are demo accounts. Delete them before this handles anything real — '
+      + 'they can manage venues and hold wallet balance.',
+    // The password is NOT echoed. It comes from SEED_PASSWORD, and an endpoint
+    // that hands back working credentials over HTTP is a credential leak even
+    // when the caller had to know the cron secret to reach it.
+    logins: { player: 'aayan@gameon.app', owner: 'shivanshu@gameon.app' },
   });
 }));
 

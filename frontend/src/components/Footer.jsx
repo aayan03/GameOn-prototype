@@ -12,6 +12,15 @@ const LINKS = {
     { to: '/owner', label: 'Owner dashboard' },
     { to: '/owner/requests', label: 'Booking requests' },
   ],
+  // Razorpay's onboarding checks these are reachable from the site itself,
+  // not just by URL — and a user should not have to guess the path to a
+  // refund policy.
+  Legal: [
+    { to: '/terms', label: 'Terms of Service' },
+    { to: '/privacy', label: 'Privacy Policy' },
+    { to: '/refunds', label: 'Cancellations & Refunds' },
+    { to: '/contact', label: 'Contact us' },
+  ],
   Sports: [
     { to: '/venues?sport=football', label: 'Football' },
     { to: '/venues?sport=cricket', label: 'Cricket' },

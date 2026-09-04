@@ -22,10 +22,12 @@ const ok = (name, cond) => {
 console.log('\n── expired requests must not strand money ──');
 {
   const s = src('src/services/lifecycle.service.js');
-  ok('refunds what was actually paid', /amountPaid/.test(s) && /wallet\.credit/.test(s));
+  // Refunds now go through the shared service, which sends a card payment
+  // back to the card instead of always crediting the wallet.
+  ok('refunds what was actually paid', /amountPaid/.test(s) && /refunds\.issueRefund/.test(s));
   ok('only expires requests that had a fair chance', /MIN_REQUEST_AGE_MS/.test(s) && /createdAt: \{ \$lte: oldEnough \}/.test(s));
   ok('refund is conditional on winning the flip', /if \(!flip\.modifiedCount\) continue;/.test(s));
-  ok('records the refund on the booking', /cancellation\.refundAmount/.test(s));
+  ok('records the refund on the booking', /issued\.refunded/.test(s));
   ok('queries are bounded', /\.limit\(500\)/.test(s));
 }
 
@@ -113,7 +115,10 @@ console.log('\n── money that never entered the platform is never refunded �
   ok('revoke clamps inside the database', /\$max: \[0, \{ \$subtract: \['\$lifetimePoints', amount\] \}\]/.test(l));
 
   const lc = src('src/services/lifecycle.service.js');
-  ok('the refund moves before it is recorded', lc.indexOf('await wallet.credit') < lc.indexOf("'cancellation.refundStatus': 'processed'"));
+  // The claim-then-pay ordering moved into services/refund.service.js, which
+  // stamps 'pending' before touching money and 'processed' only after it has
+  // moved — so a crash in between is visible rather than silently lost.
+  ok('the expiry refund is delegated, not hand-rolled', /refunds\.issueRefund/.test(lc) && !/wallet\.credit/.test(lc));
   ok('the refund is computed from the whole group', /status: BOOKING_STATUS\.EXPIRED \}\)\s*\n\s*\.select/.test(lc));
   ok('completion is batched', /COMPLETE_BATCH/.test(lc));
   ok('a re-request cannot erase a late withdrawal', /wasAccepted: existing\.wasAccepted \|\| entry\.wasAccepted/.test(src('src/controllers/teamup.controller.js')));
@@ -190,7 +195,7 @@ console.log('\n── the free-tier scheduler hook ──');
   ok('the seed endpoint needs the cron secret', /router\.post\('\/seed', asyncHandler\(async \(req, res\) => \{\s*\n\s*authorise\(req\);/.test(c));
   ok('it refuses a non-empty database', /Refusing to seed: the database is not empty/.test(c));
   ok('it never seeds real business listings', /seedDatabase\(\{ noLucknow: true/.test(c));
-  ok('it says the demo passwords are public', /published in this repository/.test(c));
+  ok('it does not hand back working credentials', !/player123|owner123/.test(c) && /demo accounts/i.test(c));
 }
 
 console.log('\n── the stack actually deploys ──');

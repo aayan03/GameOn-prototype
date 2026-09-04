@@ -64,12 +64,21 @@ function prepareEnv(uri) {
   }
 }
 
-/** Boots Mongo + the app once for a whole test file. */
-export async function startTestServer() {
+/**
+ * Boots Mongo + the app once for a whole test file.
+ *
+ * `env` overrides are applied AFTER the defaults and BEFORE config/env.js is
+ * imported, which is the only window in which they take effect — that module
+ * snapshots process.env at import time. `node --test` runs each file in its
+ * own process, so a file that sets Razorpay credentials this way does not
+ * leak them into any other.
+ */
+export async function startTestServer({ env = {} } = {}) {
   if (baseUrl) return baseUrl;
 
   memoryServer = await MongoMemoryServer.create();
   prepareEnv(memoryServer.getUri('gameon_test'));
+  for (const [k, v] of Object.entries(env)) process.env[k] = v;
 
   const { default: app } = await import('../../src/app.js');
   timeUtil = await import('../../src/utils/time.js');

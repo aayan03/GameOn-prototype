@@ -17,7 +17,9 @@
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
     "check:email": "node scripts/check-email.mjs",
-    "fix:indexes": "node scripts/fix-text-index.mjs"
+    "fix:indexes": "node scripts/fix-text-index.mjs",
+    "purge:demo": "node scripts/purge-demo-data.mjs",
+    "make:admin": "node scripts/make-admin.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

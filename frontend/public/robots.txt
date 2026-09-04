@@ -10,4 +10,4 @@ Disallow: /profile
 Disallow: /loyalty
 Disallow: /teams
 
-Sitemap: https://gameon.app/sitemap.xml
+Sitemap: __SITE_URL__/sitemap.xml

@@ -68,6 +68,20 @@ const bookingSchema = new mongoose.Schema(
       reason: { type: String, default: '' },
       refundAmount: { type: Number, default: 0 },
       refundStatus: { type: String, enum: ['none', 'pending', 'processed'], default: 'none' },
+      /**
+       * WHERE the money went back to, and the gateway's id for it.
+       *
+       * Not cosmetic: `wallet_fallback` means a card refund was attempted,
+       * failed, and the customer was given wallet credit instead — a real
+       * refund still has to be issued by hand from the Razorpay dashboard.
+       * Without recording it, that debt is invisible.
+       */
+      refundMethod: {
+        type: String,
+        enum: ['none', 'wallet', 'gateway', 'wallet_fallback'],
+        default: 'none',
+      },
+      refundReference: { type: String, default: '' },
     },
 
     // Set when this booking was created from a TeamUp post (Phase 3).

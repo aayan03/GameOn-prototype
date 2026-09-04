@@ -1,20 +1,49 @@
 // Realistic seed data across four Indian cities so discovery, filters,
 // geo-search and the map all have something to show immediately.
 
+/**
+ * Demo passwords come from the environment, not from this file.
+ *
+ * `owner123` and `player123` were literal strings in a public repository, on
+ * accounts that can manage venues and hold wallet balance. Anyone who read the
+ * repo could sign into any deployment that had ever been seeded — and the
+ * seeder printed the credentials on success, so it read as intended rather
+ * than as a hole.
+ *
+ * The dev default is kept, because a local database that needs a password
+ * hunt to log into is a worse experience for no security benefit — nothing on
+ * a throwaway in-memory Mongo is worth protecting. Anywhere else, set
+ * SEED_PASSWORD to something of your own, and delete these accounts once the
+ * real ones exist.
+ */
+const DEMO_PASSWORD = process.env.SEED_PASSWORD
+  || (process.env.NODE_ENV === 'production' ? null : 'player123');
+
+if (!DEMO_PASSWORD) {
+  throw new Error(
+    'Refusing to seed demo accounts in production without SEED_PASSWORD. '
+    + 'These accounts can manage venues and hold balance, and their old default '
+    + 'passwords are published in this repository. Set SEED_PASSWORD to a value '
+    + 'of your own, or do not seed a production database.'
+  );
+}
+
+export const demoPassword = DEMO_PASSWORD;
+
 export const owners = [
-  { name: 'Shivanshu Rathore', email: 'shivanshu@gameon.app', password: 'owner123', role: 'owner', phone: '9810011001', city: 'Bengaluru' },
-  { name: 'Meera Iyer',        email: 'meera@gameon.app',     password: 'owner123', role: 'owner', phone: '9810011002', city: 'Mumbai' },
-  { name: 'Rajat Khanna',      email: 'rajat@gameon.app',     password: 'owner123', role: 'owner', phone: '9810011003', city: 'Delhi' },
-  { name: 'Farhan Qureshi',    email: 'farhan@gameon.app',    password: 'owner123', role: 'owner', phone: '9810011004', city: 'Pune' },
+  { name: 'Shivanshu Rathore', email: 'shivanshu@gameon.app', password: DEMO_PASSWORD, role: 'owner', phone: '9810011001', city: 'Bengaluru' },
+  { name: 'Meera Iyer',        email: 'meera@gameon.app',     password: DEMO_PASSWORD, role: 'owner', phone: '9810011002', city: 'Mumbai' },
+  { name: 'Rajat Khanna',      email: 'rajat@gameon.app',     password: DEMO_PASSWORD, role: 'owner', phone: '9810011003', city: 'Delhi' },
+  { name: 'Farhan Qureshi',    email: 'farhan@gameon.app',    password: DEMO_PASSWORD, role: 'owner', phone: '9810011004', city: 'Pune' },
 ];
 
 export const players = [
   // lifetimePoints is set so the demo shows every loyalty tier at once.
-  { name: 'Aayan Ahmed',    email: 'aayan@gameon.app',    password: 'player123', role: 'player', phone: '9820022001', city: 'Bengaluru', favoriteSports: ['football', 'cricket'], skillLevel: 'advanced',     position: 'Midfielder',  walletBalance: 2500, lifetimePoints: 2400, loyaltyPoints: 1850, gamesPlayed: 34 },
-  { name: 'Adeem Sheikh',   email: 'adeem@gameon.app',    password: 'player123', role: 'player', phone: '9820022002', city: 'Bengaluru', favoriteSports: ['badminton'],           skillLevel: 'intermediate', position: 'Singles',     walletBalance: 1200, lifetimePoints: 720,  loyaltyPoints: 720,  gamesPlayed: 11 },
-  { name: 'Veer Malhotra',  email: 'veer@gameon.app',     password: 'player123', role: 'player', phone: '9820022003', city: 'Mumbai',    favoriteSports: ['football'],            skillLevel: 'intermediate', position: 'Goalkeeper',  walletBalance: 800,  lifetimePoints: 150,  loyaltyPoints: 150,  gamesPlayed: 3 },
-  { name: 'Vaishnavi Rao',  email: 'vaishnavi@gameon.app',password: 'player123', role: 'player', phone: '9820022004', city: 'Pune',      favoriteSports: ['basketball','tennis'], skillLevel: 'advanced',     position: 'Point Guard', walletBalance: 3000, lifetimePoints: 5600, loyaltyPoints: 3100, gamesPlayed: 71 },
-  { name: 'Anushka Desai',  email: 'anushka@gameon.app',  password: 'player123', role: 'player', phone: '9820022005', city: 'Delhi',     favoriteSports: ['cricket'],             skillLevel: 'beginner',     position: 'All-rounder', walletBalance: 500,  lifetimePoints: 100,  loyaltyPoints: 100,  gamesPlayed: 1 },
+  { name: 'Aayan Ahmed',    email: 'aayan@gameon.app',    password: DEMO_PASSWORD, role: 'player', phone: '9820022001', city: 'Bengaluru', favoriteSports: ['football', 'cricket'], skillLevel: 'advanced',     position: 'Midfielder',  walletBalance: 2500, lifetimePoints: 2400, loyaltyPoints: 1850, gamesPlayed: 34 },
+  { name: 'Adeem Sheikh',   email: 'adeem@gameon.app',    password: DEMO_PASSWORD, role: 'player', phone: '9820022002', city: 'Bengaluru', favoriteSports: ['badminton'],           skillLevel: 'intermediate', position: 'Singles',     walletBalance: 1200, lifetimePoints: 720,  loyaltyPoints: 720,  gamesPlayed: 11 },
+  { name: 'Veer Malhotra',  email: 'veer@gameon.app',     password: DEMO_PASSWORD, role: 'player', phone: '9820022003', city: 'Mumbai',    favoriteSports: ['football'],            skillLevel: 'intermediate', position: 'Goalkeeper',  walletBalance: 800,  lifetimePoints: 150,  loyaltyPoints: 150,  gamesPlayed: 3 },
+  { name: 'Vaishnavi Rao',  email: 'vaishnavi@gameon.app',password: DEMO_PASSWORD, role: 'player', phone: '9820022004', city: 'Pune',      favoriteSports: ['basketball','tennis'], skillLevel: 'advanced',     position: 'Point Guard', walletBalance: 3000, lifetimePoints: 5600, loyaltyPoints: 3100, gamesPlayed: 71 },
+  { name: 'Anushka Desai',  email: 'anushka@gameon.app',  password: DEMO_PASSWORD, role: 'player', phone: '9820022005', city: 'Delhi',     favoriteSports: ['cricket'],             skillLevel: 'beginner',     position: 'All-rounder', walletBalance: 500,  lifetimePoints: 100,  loyaltyPoints: 100,  gamesPlayed: 1 },
 ];
 
 const img = (id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1200&q=70`;

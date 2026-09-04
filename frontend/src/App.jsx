@@ -45,6 +45,18 @@ const Admin          = lazy(() => import('./pages/Admin.jsx'));
 const Notifications  = lazy(() => import('./pages/Notifications.jsx'));
 const NotFound       = lazy(() => import('./pages/NotFound.jsx'));
 
+/**
+ * Terms, Privacy, Refunds and Contact.
+ *
+ * Not optional decoration: Razorpay's Indian onboarding requires all four to
+ * be live on your own domain before it will activate a real merchant account,
+ * and a user paying money is entitled to read them first.
+ */
+const Terms          = lazy(() => import('./pages/Legal.jsx').then((m) => ({ default: m.Terms })));
+const Privacy        = lazy(() => import('./pages/Legal.jsx').then((m) => ({ default: m.Privacy })));
+const Refunds        = lazy(() => import('./pages/Legal.jsx').then((m) => ({ default: m.Refunds })));
+const Contact        = lazy(() => import('./pages/Legal.jsx').then((m) => ({ default: m.Contact })));
+
 const OWNER = ['owner', 'admin'];
 
 /** Shown while a route chunk is in flight. Sized to avoid a layout jump. */
@@ -110,6 +122,12 @@ export default function App() {
 
                     {/* Admin — the role is only assignable directly in the database */}
                     <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />
+
+                    {/* Public policy pages — no session required. */}
+                    <Route path="/terms"    element={<Terms />} />
+                    <Route path="/privacy"  element={<Privacy />} />
+                    <Route path="/refunds"  element={<Refunds />} />
+                    <Route path="/contact"  element={<Contact />} />
 
                     <Route path="*" element={<NotFound />} />
                   </Routes>

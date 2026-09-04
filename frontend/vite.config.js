@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * `base` is the single most load-bearing setting in this file.
@@ -19,8 +21,69 @@ import react from '@vitejs/plugin-react';
  */
 const isCapacitorBuild = process.env.VITE_BUILD_TARGET === 'capacitor';
 
+/**
+ * The canonical public URL of this deployment.
+ *
+ * `https://gameon.app` was hardcoded into index.html, robots.txt and
+ * sitemap.xml. If you do not own that domain — and nobody deploying this
+ * repository does — the canonical tag tells Google your content belongs to
+ * someone else's site, and the sitemap advertises URLs that are not yours.
+ * Set VITE_SITE_URL to your real origin at build time.
+ */
+const SITE_URL = (process.env.VITE_SITE_URL || 'http://localhost:5173').replace(/\/$/, '');
+
+/**
+ * Rewrites the `__SITE_URL__` placeholder in index.html and in anything copied
+ * out of public/.
+ *
+ * Deliberately NOT Vite's own `%VAR%` syntax. Vite runs `decodeURI` over every
+ * href and src while parsing index.html, and `%SI` is not a valid percent
+ * escape — so a `%SITE_URL%` inside `<link rel="canonical" href>` failed the
+ * whole build with "URI malformed" and a stack trace pointing at nothing
+ * useful. Underscores survive that pass untouched.
+ *
+ * `order: 'pre'` so the substitution happens before Vite processes the URLs.
+ */
+function siteUrlPlugin() {
+  return {
+    name: 'gameon-site-url',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) { return html.replaceAll('__SITE_URL__', SITE_URL); },
+    },
+    /**
+     * robots.txt and sitemap.xml live in public/, which Vite copies verbatim
+     * to the output directory rather than passing through the bundle — so
+     * `generateBundle` never sees them and they shipped with the placeholder
+     * still in, advertising `__SITE_URL__/venues` to search engines.
+     *
+     * `closeBundle` runs after the copy, so rewrite them on disk there.
+     */
+    closeBundle() {
+      const outDir = resolve(process.cwd(), 'dist');
+      for (const name of ['robots.txt', 'sitemap.xml', 'manifest.webmanifest']) {
+        const file = resolve(outDir, name);
+        if (!existsSync(file)) continue;
+        const text = readFileSync(file, 'utf8');
+        if (text.includes('__SITE_URL__')) {
+          writeFileSync(file, text.replaceAll('__SITE_URL__', SITE_URL));
+        }
+      }
+
+      if (!process.env.VITE_SITE_URL && process.env.NODE_ENV !== 'test') {
+        // Loud, because the consequence is invisible until Google has already
+        // indexed the wrong domain.
+        console.warn(
+          `\n⚠️  VITE_SITE_URL is not set, so canonical URLs and the sitemap point at ${SITE_URL}.`
+          + '\n   Set it to your real origin before a public deploy.\n'
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), siteUrlPlugin()],
   base: isCapacitorBuild ? './' : '/',
   server: {
     port: 5173,
