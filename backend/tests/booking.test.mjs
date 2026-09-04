@@ -1,5 +1,9 @@
-import { toMinutes, toHHMM, toLabel, isPeak, dayOfWeek, toDate, daysBetween, todayKey }
-  from '../src/utils/time.js';
+// Pin the venue clock before importing anything that reads it, so this file
+// asserts the same thing whatever timezone the machine running it is in.
+process.env.APP_TIMEZONE = 'Asia/Kolkata';
+
+const { toMinutes, toHHMM, toLabel, isPeak, dayOfWeek, toDate, daysBetween, todayKey, localKey }
+  = await import('../src/utils/time.js');
 import { priceFor, refundFor, lookupPromo } from '../src/services/booking.service.js';
 
 let pass = 0, fail = 0;
@@ -64,9 +68,20 @@ eq('missing policy defaults',  refundFor(paid(48), {}).amount, 1000);
 
 console.log('\n── date maths ──');
 eq('today is 0 days out', daysBetween(todayKey()), 0);
+/**
+ * Read the instant back on the VENUE's clock, not the server's.
+ *
+ * These two assertions used to call `d.getHours()`, which reads whatever
+ * timezone the process happens to run in. That passed on a laptop set to IST
+ * and failed on every real host — and because it was the test, it was quietly
+ * asserting that the bug was the correct behaviour.
+ */
 const d = toDate('2026-08-20', 1110);
-eq('toDate hours', d.getHours(), 18);
-eq('toDate minutes', d.getMinutes(), 30);
+eq('toDate lands on the right venue day', localKey(d), '2026-08-20');
+eq('toDate is 18:30 venue time', new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata', hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
+}).format(d), '18:30');
+eq('toDate is the matching UTC instant', d.toISOString(), '2026-08-20T13:00:00.000Z');
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

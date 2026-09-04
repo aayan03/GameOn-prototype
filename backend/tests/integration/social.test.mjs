@@ -20,6 +20,25 @@ beforeEach(resetDatabase);
 
 const soon = (hours = 48) => new Date(Date.now() + hours * 3600_000).toISOString();
 
+/**
+ * Moves a post's kickoff into the past.
+ *
+ * Settlement is only allowed once the game has started, and a post cannot be
+ * CREATED in the past, so a test that needs a played game has to make one and
+ * then age it.
+ */
+async function kickOff(postId, hoursAgo = 1) {
+  await mongoose.model('TeamUpPost').updateOne(
+    { _id: postId },
+    { $set: { playAt: new Date(Date.now() - hoursAgo * 3600_000) } },
+  );
+}
+
+const walletOf = async (userId) => {
+  const u = await mongoose.model('User').findById(userId).select('walletBalance').lean();
+  return u.walletBalance;
+};
+
 async function createPost(host, overrides = {}) {
   const res = await post('/api/teamup', {
     type: 'need_players',
@@ -156,6 +175,7 @@ test('cost settlement runs once and charges the agreed share', async () => {
   });
 
   await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+  await kickOff(game._id);
 
   const first = await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
   assert.equal(first.status, 200);
@@ -163,6 +183,112 @@ test('cost settlement runs once and charges the agreed share', async () => {
 
   const second = await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
   assert.equal(second.status, 400, 'settling twice is refused');
+});
+
+test('a host cannot collect before the game has kicked off', async () => {
+  const host = await createUser({ role: 'player' });
+  const joiner = await createUser({ role: 'player' });
+  await fundWallet(joiner.id, 5000);
+
+  const game = await createPost(host, {
+    spotsNeeded: 1, autoApprove: true,
+    costSharing: { enabled: true, totalAmount: 1000 },
+  });
+  await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+
+  const before = await walletOf(joiner.id);
+  const res = await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
+
+  assert.equal(res.status, 400, 'the game is still two days away');
+  assert.match(res.body.error.message, /once the game has started/i);
+  assert.equal(await walletOf(joiner.id), before, 'nothing left the player’s wallet');
+});
+
+test('cancelling after settling gives every share back', async () => {
+  const host = await createUser({ role: 'player' });
+  const joiner = await createUser({ role: 'player' });
+  await fundWallet(joiner.id, 5000);
+  await fundWallet(host.id, 0);
+
+  const game = await createPost(host, {
+    spotsNeeded: 1, autoApprove: true,
+    costSharing: { enabled: true, totalAmount: 1000 },
+  });
+  await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+  await kickOff(game._id);
+
+  const beforeJoiner = await walletOf(joiner.id);
+  const settle = await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
+  assert.equal(settle.status, 200);
+  const collected = settle.body.data.collected;
+  assert.ok(collected > 0);
+  assert.equal(await walletOf(joiner.id), beforeJoiner - collected, 'the share was taken');
+  assert.equal(await walletOf(host.id), collected, 'and landed with the host');
+
+  // The whole point: settle-then-cancel must not be profitable.
+  const cancel = await del(`/api/teamup/${game._id}`, { token: host.token });
+  assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+  assert.equal(cancel.body.data.refunded, collected);
+  assert.equal(await walletOf(joiner.id), beforeJoiner, 'the player is whole again');
+  assert.equal(await walletOf(host.id), 0, 'the host kept nothing');
+});
+
+test('two simultaneous cancels refund only once', async () => {
+  const host = await createUser({ role: 'player' });
+  const joiner = await createUser({ role: 'player' });
+  await fundWallet(joiner.id, 5000);
+
+  const game = await createPost(host, {
+    spotsNeeded: 1, autoApprove: true,
+    costSharing: { enabled: true, totalAmount: 1000 },
+  });
+  await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+  await kickOff(game._id);
+
+  const beforeJoiner = await walletOf(joiner.id);
+  await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
+
+  const [a, b] = await Promise.all([
+    del(`/api/teamup/${game._id}`, { token: host.token }),
+    del(`/api/teamup/${game._id}`, { token: host.token }),
+  ]);
+  assert.equal([a, b].filter((r) => r.status === 200).length, 1, 'one cancel wins');
+  assert.equal(await walletOf(joiner.id), beforeJoiner, 'refunded exactly once');
+});
+
+test('leaving a game you already paid for returns your share', async () => {
+  const host = await createUser({ role: 'player' });
+  const joiner = await createUser({ role: 'player' });
+  await fundWallet(joiner.id, 5000);
+
+  const game = await createPost(host, {
+    spotsNeeded: 2, autoApprove: true,
+    costSharing: { enabled: true, totalAmount: 900 },
+  });
+  await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+  await kickOff(game._id);
+
+  const before = await walletOf(joiner.id);
+  const settle = await post(`/api/teamup/${game._id}/settle`, {}, { token: host.token });
+  assert.equal(settle.status, 200);
+  assert.ok(await walletOf(joiner.id) < before);
+
+  const out = await del(`/api/teamup/${game._id}/join`, { token: joiner.token });
+  assert.equal(out.status, 200);
+  assert.ok(out.body.data.refunded > 0);
+  assert.equal(await walletOf(joiner.id), before, 'made whole on the way out');
+});
+
+test('one post cannot be built to collect an unbounded pool', async () => {
+  const host = await createUser({ role: 'player' });
+  const res = await post('/api/teamup', {
+    type: 'need_players', sport: 'football', title: 'Thirty marks required',
+    playAt: soon(), spotsNeeded: 30,
+    // Under the per-person cap (2903 each) but ₹87k in total.
+    costSharing: { enabled: true, totalAmount: 90000 },
+  }, { token: host.token });
+  assert.equal(res.status, 400, 'the per-person cap alone is not a bound on exposure');
+  assert.match(res.body.error.message, /in total/i);
 });
 
 test('only the host can settle the cost', async () => {
@@ -173,6 +299,7 @@ test('only the host can settle the cost', async () => {
     costSharing: { enabled: true, totalAmount: 800 },
   });
   await post(`/api/teamup/${game._id}/join`, {}, { token: joiner.token });
+  await kickOff(game._id);
 
   const res = await post(`/api/teamup/${game._id}/settle`, {}, { token: joiner.token });
   assert.equal(res.status, 403);
@@ -277,6 +404,27 @@ test('price filtering uses the cheapest active court', async () => {
   const cheap = await get('/api/venues?maxPrice=1000');
   assert.equal(cheap.body.meta.total, 1);
   assert.equal(cheap.body.data[0].name, 'Budget Turf');
+});
+
+test('a venue page does not expose the platform’s commercial terms', async () => {
+  const owner = await createUser({ role: 'owner' });
+  const venue = await createVenue(owner);
+
+  // Anonymous: the public view.
+  const res = await get(`/api/venues/${venue._id}`);
+  assert.equal(res.status, 200);
+  const body = res.body.data.venue;
+  for (const field of ['commissionPercent', 'blackouts', 'moderationNote', 'moderatedBy']) {
+    assert.equal(body[field], undefined, `${field} is internal, not public`);
+  }
+
+  // The owner still sees their own venue in full — the moderation note is
+  // written for them to read.
+  const mine = await get(`/api/venues/${venue._id}`, { token: owner.token });
+  assert.equal(mine.status, 200);
+  assert.equal(typeof mine.body.data.venue.commissionPercent, 'number',
+    'the owner sees their own commercial terms');
+  assert.ok(Array.isArray(mine.body.data.venue.blackouts));
 });
 
 test('a venue page does not expose the owner\'s email or phone', async () => {

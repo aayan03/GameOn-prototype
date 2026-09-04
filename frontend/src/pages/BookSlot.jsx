@@ -352,7 +352,17 @@ export default function BookSlot() {
                 <span>
                   {isInstant
                     ? 'This venue confirms instantly. Your slot is locked the moment you pay.'
-                    : `This venue confirms manually. We'll send your request and ${venue.name} usually replies within ${venue.manualContact?.responseTimeMins || 30} minutes. Nothing is charged until they confirm.`}
+                    : (
+                      /* The old copy said "nothing is charged until they confirm"
+                         under every payment method. That is true of the wallet and
+                         of pay-at-venue, and flatly false for card/UPI: Razorpay
+                         collects the moment checkout completes, long before the
+                         venue has answered. Say which it is. */
+                      `This venue confirms manually. We'll send your request and ${venue.name} usually replies within ${venue.manualContact?.responseTimeMins || 30} minutes. `
+                      + (payMethod === 'gateway'
+                        ? 'Card and UPI are charged now and refunded in full if the venue cannot take it.'
+                        : 'Nothing is charged until they confirm.')
+                    )}
                 </span>
               </div>
 

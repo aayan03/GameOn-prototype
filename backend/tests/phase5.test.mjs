@@ -199,6 +199,40 @@ console.log('\n── the stack actually deploys ──');
   ok('nginx proxies /api', /location \/api\/ \{/.test(nginx) && /proxy_pass \$api_origin/.test(nginx));
   ok('forwards the real client IP', /X-Forwarded-For/.test(nginx));
   ok('security headers are re-included per location', (nginx.match(/security-headers\.conf/g) || []).length >= 4);
+
+  /**
+   * The CSP has to allow the payment sheet, on BOTH deploy paths.
+   *
+   * nginx shipped `script-src 'self'`, which blocked checkout.razorpay.com
+   * outright — card and UPI failed with "could not load the payment window"
+   * and nothing said why. Vercel shipped no CSP at all, which is the opposite
+   * failure: an injected script had free rein over tokens kept in
+   * localStorage. Both are checked here so neither can drift back.
+   */
+  const headers = web('security-headers.conf');
+  ok('nginx sends a CSP', /Content-Security-Policy/.test(headers));
+  ok('nginx CSP allows Razorpay checkout', /script-src[^;]*checkout\.razorpay\.com/.test(headers));
+  ok('nginx CSP allows the Razorpay iframe', /frame-src[^;]*api\.razorpay\.com/.test(headers));
+  ok('nginx CSP allows the 3-D Secure form POST', /form-action[^;]*api\.razorpay\.com/.test(headers));
+  ok('nginx CSP allows map tiles', /openstreetmap|cartocdn/.test(headers));
+  ok('nginx CSP still blocks plugins and framing', /object-src 'none'/.test(headers) && /frame-ancestors 'none'/.test(headers));
+
+  const vercel = JSON.parse(web('vercel.json'));
+  const catchAll = vercel.headers.find((h) => h.source === '/(.*)');
+  const byKey = Object.fromEntries(catchAll.headers.map((h) => [h.key, h.value]));
+  ok('vercel sends a CSP at all', Boolean(byKey['Content-Security-Policy']));
+  ok('vercel CSP pins script-src', /script-src 'self'/.test(byKey['Content-Security-Policy'] || ''));
+  ok('vercel CSP allows Razorpay checkout', /checkout\.razorpay\.com/.test(byKey['Content-Security-Policy'] || ''));
+  ok('vercel CSP blocks plugins', /object-src 'none'/.test(byKey['Content-Security-Policy'] || ''));
+  ok('vercel still sends nosniff and DENY', byKey['X-Content-Type-Options'] === 'nosniff' && byKey['X-Frame-Options'] === 'DENY');
+
+  // Neither policy may fall back to allowing arbitrary inline script, which
+  // would make the whole thing decorative.
+  for (const [name, policy] of [['nginx', headers], ['vercel', byKey['Content-Security-Policy'] || '']]) {
+    const scriptSrc = (policy.match(/script-src([^;"]*)/) || [])[1] || '';
+    ok(`${name} CSP has no unsafe-inline script`, !/unsafe-inline/.test(scriptSrc));
+    ok(`${name} CSP has no unsafe-eval`, !/unsafe-eval/.test(scriptSrc));
+  }
   ok('render does not require a lockfile', /npm ci --omit=dev \|\| npm install/.test(readFileSync(path.join(here, '..', '..', 'render.yaml'), 'utf8')));
   ok('CI does not cache on a missing lockfile', !/cache-dependency-path/.test(readFileSync(path.join(here, '..', '..', '.github/workflows/ci.yml'), 'utf8')));
 }

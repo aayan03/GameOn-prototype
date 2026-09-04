@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import env from '../config/env.js';
+import { RevokedToken } from '../models/index.js';
 
 const ISSUER = 'gameon';
 
@@ -16,9 +18,23 @@ export function signAccessToken(user) {
   );
 }
 
+/**
+ * `jti` is what makes a single session revocable.
+ *
+ * Without one, the only handle on a live session is `tokenVersion`, which
+ * retires every token the account has — so "log out" on a shared computer
+ * either did nothing on the server at all (what it used to do) or would have
+ * signed the user out of their phone too. An id per token lets one session be
+ * ended and the rest left alone.
+ */
 export function signRefreshToken(user) {
   return jwt.sign(
-    { sub: user._id.toString(), type: 'refresh', tv: user.tokenVersion ?? 0 },
+    {
+      sub: user._id.toString(),
+      type: 'refresh',
+      tv: user.tokenVersion ?? 0,
+      jti: crypto.randomUUID(),
+    },
     env.JWT_REFRESH_SECRET,
     { expiresIn: env.JWT_REFRESH_EXPIRES_IN, issuer: ISSUER, audience: ISSUER }
   );
@@ -41,4 +57,31 @@ export function verifyRefreshToken(token) {
     throw err;
   }
   return decoded;
+}
+
+/** Has this session been signed out? */
+export async function isRefreshRevoked(decoded) {
+  if (!decoded?.jti) return false;   // minted before jti existed
+  return Boolean(await RevokedToken.exists({ jti: decoded.jti }));
+}
+
+/**
+ * Ends one session. Idempotent — signing out twice is not an error, and the
+ * unique index would otherwise turn a double-tap on Log out into a 409.
+ */
+export async function revokeRefreshToken(decoded) {
+  if (!decoded?.jti) return false;
+  await RevokedToken.updateOne(
+    { jti: decoded.jti },
+    {
+      $setOnInsert: {
+        user: decoded.sub,
+        // The row is only useful until the token would have expired anyway.
+        // `exp` is in seconds.
+        expiresAt: new Date((decoded.exp || Math.floor(Date.now() / 1000) + 86400) * 1000),
+      },
+    },
+    { upsert: true }
+  );
+  return true;
 }

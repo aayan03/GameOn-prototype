@@ -37,7 +37,12 @@ export function errorHandler(err, req, res, next) {
   else if (err.type === 'entity.parse.failed') { status = 400; message = 'The request body was not valid JSON'; }
 
   if (status >= 500) {
-    logger.error('unhandled request error', {
+    // An `isOperational` 5xx is one we raised on purpose — a 501 for a
+    // gateway that is not configured, a 502 for one that is unreachable. It
+    // is worth a line, but it is not an unhandled error and logging it as one
+    // trains people to ignore the level that actually matters.
+    const log = err.isOperational ? logger.warn : logger.error;
+    log.call(logger, err.isOperational ? 'handled upstream failure' : 'unhandled request error', {
       err,
       method: req.method,
       path: req.originalUrl,

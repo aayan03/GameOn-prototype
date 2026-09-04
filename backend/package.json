@@ -12,7 +12,7 @@
     "seed:demo": "node src/seed/seed.js --no-lucknow",
     "seed:lucknow": "node src/seed/seed.js --lucknow-only",
     "check": "node tests/load.test.mjs",
-    "test:unit": "node tests/load.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs && node tests/email.test.mjs",
+    "test:unit": "node tests/load.test.mjs && node --test tests/time.test.mjs && node --test tests/payout.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs && node tests/email.test.mjs",
     "test:integration": "node tests/run-integration.mjs",
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",

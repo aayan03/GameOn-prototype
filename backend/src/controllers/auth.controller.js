@@ -4,7 +4,10 @@ import { User } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok, created } from '../utils/response.js';
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../services/token.service.js';
+import {
+  signAccessToken, signRefreshToken, verifyRefreshToken,
+  isRefreshRevoked, revokeRefreshToken,
+} from '../services/token.service.js';
 import { ROLES, SPORT_KEYS, SKILL_LEVELS, LOYALTY } from '../config/constants.js';
 import * as loyalty from '../services/loyalty.service.js';
 import { cleanText } from '../utils/sanitize.js';
@@ -12,11 +15,42 @@ import * as email from '../services/email.service.js';
 import { appUrl, isProd } from '../config/env.js';
 import logger from '../utils/logger.js';
 
-// Account lockout: after this many consecutive failures the account is frozen
-// for LOCK_MINUTES. Rate limiting is per-IP; this is per-account, so a
-// distributed guess against one inbox still hits a wall.
-const MAX_FAILED_LOGINS = 8;
-const LOCK_MINUTES = 15;
+/**
+ * Per-account brute-force defence: a progressive delay, not a lockout.
+ *
+ * This used to freeze the account for fifteen minutes after eight failures,
+ * and refuse the CORRECT password for the duration. Two things were wrong
+ * with that:
+ *
+ *  - It is a denial of service against any account whose email you know.
+ *    Eight wrong guesses every fifteen minutes — well inside the per-IP
+ *    limiter's budget — keeps somebody permanently locked out of their own
+ *    account, from one machine.
+ *  - The lockout message only ever appeared for an address that HAS an
+ *    account, so it was an existence oracle bolted onto the one endpoint that
+ *    goes out of its way not to be one.
+ *
+ * Throttling instead is what NIST 800-63B actually recommends, for exactly
+ * this reason. Guessing gets slower and slower; the real user, who knows
+ * their password, is never shut out and never sees any of it.
+ *
+ * The per-IP limiter is still the first line — this is the per-account one,
+ * which is what a distributed attempt against a single inbox runs into.
+ */
+const THROTTLE_AFTER = 5;          // free attempts before the delay starts
+const THROTTLE_STEP_MS = 400;      // added per failure beyond that
+const THROTTLE_MAX_MS = 4_000;     // ceiling, so this cannot hold a socket open
+// A quiet spell clears the count — an old typo should not still be slowing
+// somebody down a week later.
+const THROTTLE_WINDOW_MS = 15 * 60 * 1000;
+
+const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+
+/** How long a failed attempt should take, given how many came before it. */
+function throttleFor(failures) {
+  if (failures <= THROTTLE_AFTER) return 0;
+  return Math.min((failures - THROTTLE_AFTER) * THROTTLE_STEP_MS, THROTTLE_MAX_MS);
+}
 
 // A reset link is a bearer credential for an account, so it is short-lived.
 const RESET_TOKEN_MINUTES = 30;
@@ -89,7 +123,25 @@ function authPayload(user) {
 
 export const register = asyncHandler(async (req, res) => {
   const { email } = req.body;
+
+  /**
+   * This endpoint DOES tell you whether an address is registered, and there
+   * is no way around that while signing up hands back a session: a real new
+   * account gets tokens, and an existing one cannot.
+   *
+   * What is fixed here is the second signal. The conflict answered in a few
+   * milliseconds while a real signup spent ~100ms hashing a password with
+   * bcrypt, so the two were trivially separable even by something that
+   * ignored the status code entirely. Matching the timing means the only
+   * remaining signal is the deliberate one, which `registerLimiter` bounds to
+   * ten addresses an hour per IP.
+   *
+   * Closing it completely means moving to a verify-by-email signup, where the
+   * answer is always "check your inbox" and no session is issued until the
+   * link is clicked. That is a product decision, not a patch.
+   */
   if (await User.exists({ email })) {
+    await sleep(120);
     throw ApiError.conflict('An account with this email already exists');
   }
 
@@ -110,29 +162,45 @@ export const login = asyncHandler(async (req, res) => {
   // Same message and roughly the same work whether the account exists or not,
   // so this endpoint can't be used to enumerate registered emails.
   if (!user) {
-    await new Promise((r) => { setTimeout(r, 120); });
+    await sleep(120);
     throw ApiError.unauthorized('Incorrect email or password');
   }
 
-  if (user.lockedUntil && user.lockedUntil > new Date()) {
-    const mins = Math.ceil((user.lockedUntil - Date.now()) / 60000);
-    throw ApiError.forbidden(`Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
-  }
+  // `lockedUntil` is now the expiry of the FAILURE WINDOW, not a gate. Past
+  // it, the count starts again — the field is reused rather than renamed so
+  // no migration is needed for rows that still carry an old lock date.
+  const windowOpen = user.lockedUntil && user.lockedUntil > new Date();
+  const priorFailures = windowOpen ? (user.failedLogins || 0) : 0;
 
-  if (!(await user.comparePassword(password))) {
-    const failed = (user.failedLogins || 0) + 1;
-    const update = { failedLogins: failed };
-    if (failed >= MAX_FAILED_LOGINS) {
-      update.lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60000);
-      update.failedLogins = 0;
-    }
-    await User.updateOne({ _id: user._id }, { $set: update });
+  /**
+   * The password is checked FIRST, always.
+   *
+   * Whoever is holding the correct password is the account's owner, and
+   * refusing them because somebody else has been guessing is the denial of
+   * service this replaced. Guessing is slowed by the delay below; the person
+   * who knows the password never waits at all.
+   */
+  const correct = await user.comparePassword(password);
+
+  if (!correct) {
+    const failures = priorFailures + 1;
+    await User.updateOne({ _id: user._id }, {
+      $set: {
+        failedLogins: failures,
+        lockedUntil: new Date(Date.now() + THROTTLE_WINDOW_MS),
+      },
+    });
+
+    // Every wrong guess costs more than the last. The message never changes,
+    // so the throttle is not an oracle either — a stranger cannot tell a
+    // heavily-guessed real account from one that does not exist.
+    await sleep(throttleFor(failures));
     throw ApiError.unauthorized('Incorrect email or password');
   }
 
   if (!user.isActive) throw ApiError.forbidden('This account has been disabled');
 
-  // Successful login clears the counter.
+  // A successful login clears the count.
   if (user.failedLogins || user.lockedUntil) {
     await User.updateOne({ _id: user._id }, { $set: { failedLogins: 0, lockedUntil: null } });
   }
@@ -145,6 +213,13 @@ export const refresh = asyncHandler(async (req, res) => {
   if (!refreshToken) throw ApiError.badRequest('refreshToken is required');
 
   const decoded = verifyRefreshToken(refreshToken);
+
+  // Signed out. Checked BEFORE the account lookup so a revoked token costs a
+  // single indexed read and nothing else.
+  if (await isRefreshRevoked(decoded)) {
+    throw ApiError.unauthorized('This session has been signed out. Please log in again.');
+  }
+
   const user = await User.findById(decoded.sub);
   if (!user || !user.isActive) throw ApiError.unauthorized('Account not found');
 
@@ -155,6 +230,51 @@ export const refresh = asyncHandler(async (req, res) => {
   }
 
   return ok(res, { accessToken: signAccessToken(user) });
+});
+
+/**
+ * POST /api/auth/logout
+ *
+ * Ends THIS session on the server, not just in the browser.
+ *
+ * Clearing localStorage was the entire logout, which meant the refresh token
+ * carried on working for its full thirty days: anyone who had copied it — off
+ * a shared machine, or through an XSS — kept the account for a month, and
+ * pressing Log out did not take it back.
+ *
+ * Deliberately not authenticated by the access token. The common case for
+ * logging out is that the access token has already expired, and a logout that
+ * 401s is a logout that leaves the session alive.
+ */
+export const logout = asyncHandler(async (req, res) => {
+  const refreshToken = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : null;
+
+  if (refreshToken) {
+    try {
+      await revokeRefreshToken(verifyRefreshToken(refreshToken));
+    } catch {
+      // A token that will not verify is already worthless. Answering 200
+      // either way also means this endpoint cannot be used to test whether a
+      // token is valid.
+    }
+  }
+
+  return ok(res, { loggedOut: true, message: 'Signed out.' });
+});
+
+/**
+ * POST /api/auth/logout-all — the "somebody else has my password" button.
+ *
+ * Bumps tokenVersion, which retires every access and refresh token ever
+ * issued to this account, on every device, immediately.
+ */
+export const logoutAll = asyncHandler(async (req, res) => {
+  await User.updateOne({ _id: req.user._id }, { $inc: { tokenVersion: 1 } });
+  logger.info('user signed out everywhere', { userId: String(req.user._id) });
+  return ok(res, {
+    loggedOut: true,
+    message: 'Signed out on every device. Log in again to continue.',
+  });
 });
 
 export const me = asyncHandler(async (req, res) => ok(res, {

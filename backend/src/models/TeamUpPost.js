@@ -23,6 +23,13 @@ const joinRequestSchema = new mongoose.Schema(
     // night before" apart from "asked, was never answered, changed my mind" —
     // and only the first of those should cost anyone reliability.
     wasAccepted: { type: Boolean, default: false },
+    // What was ACTUALLY taken from this player's wallet at settlement, so it
+    // can be given back if the game is then cancelled. `agreedShare` is what
+    // they signed up to pay; this is what left their balance. Without it a
+    // host could settle, pocket everyone's share, cancel the game, and the
+    // platform had no record of what it owed back to whom.
+    settledAmount: { type: Number, default: 0, min: 0 },
+    settledAt: { type: Date, default: null },
     requestedAt: { type: Date, default: Date.now },
     respondedAt: { type: Date, default: null },
   },

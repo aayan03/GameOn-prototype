@@ -111,15 +111,68 @@ test('NoSQL operator injection cannot bypass login', async () => {
   assert.ok(!res.body?.data?.accessToken, 'no session was issued');
 });
 
-test('locks the account after repeated failures', async () => {
+test('repeated failures throttle the account without locking its owner out', async () => {
   const u = await createUser();
-  // MAX_FAILED_LOGINS is 8.
+
   for (let i = 0; i < 8; i++) {
+    const bad = await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
+    assert.equal(bad.status, 401, 'a wrong password is always just a 401');
+    assert.match(bad.body.error.message, /incorrect email or password/i);
+  }
+
+  // The whole finding: this used to answer 403 and refuse the real user for
+  // fifteen minutes, so anyone who knew the address could keep them out.
+  const good = await post('/api/auth/login', { email: u.email, password: u.password });
+  assert.equal(good.status, 200, 'the owner still gets in with the right password');
+  assert.ok(good.body.data.accessToken);
+});
+
+test('guessing gets measurably slower', async () => {
+  const u = await createUser();
+
+  const timeOne = async () => {
+    const t0 = Date.now();
+    await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
+    return Date.now() - t0;
+  };
+
+  const first = await timeOne();          // inside the free allowance
+  for (let i = 0; i < 8; i++) await timeOne();
+  const later = await timeOne();          // well past it
+
+  assert.ok(later > first + 500,
+    `a late guess should cost noticeably more (first ${first}ms, later ${later}ms)`);
+});
+
+test('a successful login clears the throttle', async () => {
+  const u = await createUser();
+  for (let i = 0; i < 7; i++) {
     await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
   }
-  const locked = await post('/api/auth/login', { email: u.email, password: u.password });
-  assert.equal(locked.status, 403, 'correct password is refused while locked');
-  assert.match(locked.body.error.message, /too many failed attempts/i);
+  await post('/api/auth/login', { email: u.email, password: u.password });
+
+  const t0 = Date.now();
+  await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
+  assert.ok(Date.now() - t0 < 500, 'the count started again after a good login');
+});
+
+test('the throttle is not an account-existence oracle', async () => {
+  const u = await createUser();
+  // Drive a real account deep into the throttle.
+  for (let i = 0; i < 9; i++) {
+    await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
+  }
+
+  const real = await post('/api/auth/login', { email: u.email, password: 'Wrong123456' });
+  const fake = await post('/api/auth/login', {
+    email: 'definitely-not-registered@example.com', password: 'Wrong123456',
+  });
+
+  // Before the fix a throttled real account answered 403 with a distinct
+  // message, while an unknown address answered 401 — which told an attacker
+  // exactly which addresses were registered.
+  assert.equal(real.status, fake.status, 'same status');
+  assert.equal(real.body.error.message, fake.body.error.message, 'same message');
 });
 
 /* ── Tokens ──────────────────────────────────────────────────── */
@@ -304,4 +357,75 @@ test('forgot-password does not leak account existence through status or timing',
     Object.keys(unknown.body.data).filter((k) => k !== 'devResetUrl').sort(),
     'same response shape, so the body is not an oracle either',
   );
+});
+
+
+/* ── Logging out actually ends the session ───────────────────── */
+
+test('logging out revokes the refresh token on the server', async () => {
+  const user = await createUser({ role: 'player' });
+
+  // It works before logging out.
+  const before = await post('/api/auth/refresh', { refreshToken: user.refreshToken });
+  assert.equal(before.status, 200, 'a live session refreshes');
+
+  const out = await post('/api/auth/logout', { refreshToken: user.refreshToken });
+  assert.equal(out.status, 200);
+
+  // And is dead afterwards. This is the whole finding: before the fix a
+  // stolen refresh token kept working for thirty days no matter how many
+  // times the real user pressed Log out.
+  const after = await post('/api/auth/refresh', { refreshToken: user.refreshToken });
+  assert.equal(after.status, 401, 'a signed-out token must not refresh');
+  assert.match(after.body.error.message, /signed out/i);
+});
+
+test('logging out of one session leaves the others alone', async () => {
+  const user = await createUser({ role: 'player' });
+  // A second device: same account, its own tokens.
+  const second = await post('/api/auth/login', { email: user.email, password: user.password });
+  assert.equal(second.status, 200);
+  const phone = second.body.data.refreshToken;
+
+  await post('/api/auth/logout', { refreshToken: user.refreshToken });
+
+  const stillGood = await post('/api/auth/refresh', { refreshToken: phone });
+  assert.equal(stillGood.status, 200, 'signing out of a laptop must not sign out the phone');
+});
+
+test('logout is idempotent and never leaks whether a token was valid', async () => {
+  const user = await createUser({ role: 'player' });
+
+  const first = await post('/api/auth/logout', { refreshToken: user.refreshToken });
+  const again = await post('/api/auth/logout', { refreshToken: user.refreshToken });
+  const junk = await post('/api/auth/logout', { refreshToken: 'not.a.token' });
+  const empty = await post('/api/auth/logout', {});
+
+  for (const [name, res] of [['first', first], ['repeat', again], ['junk', junk], ['empty', empty]]) {
+    assert.equal(res.status, 200, `${name} answers 200`);
+    assert.deepEqual(res.body.data.loggedOut, true, `${name} says the same thing`);
+  }
+});
+
+test('logout-all kills every session at once', async () => {
+  const user = await createUser({ role: 'player' });
+  const second = await post('/api/auth/login', { email: user.email, password: user.password });
+  const phone = second.body.data.refreshToken;
+
+  const res = await post('/api/auth/logout-all', {}, { token: user.token });
+  assert.equal(res.status, 200);
+
+  for (const [name, rt] of [['laptop', user.refreshToken], ['phone', phone]]) {
+    const after = await post('/api/auth/refresh', { refreshToken: rt });
+    assert.equal(after.status, 401, `${name} is signed out too`);
+  }
+
+  // The access token dies with them.
+  const me = await get('/api/auth/me', { token: user.token });
+  assert.equal(me.status, 401, 'the access token is retired as well');
+});
+
+test('logout-all needs a session of its own', async () => {
+  const res = await post('/api/auth/logout-all', {});
+  assert.equal(res.status, 401);
 });

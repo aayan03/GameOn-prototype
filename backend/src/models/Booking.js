@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'node:crypto';
 import { BOOKING_STATUS, BOOKING_MODES } from '../config/constants.js';
 
 /**
@@ -122,12 +123,33 @@ bookingSchema.pre('save', function syncSlotLock(next) {
   next();
 });
 
+/**
+ * A booking reference, unique and not guessable.
+ *
+ * The old form was a millisecond timestamp plus three characters of
+ * `Math.random()`. Two problems, one visible and one not:
+ *
+ *  - Three base-36 characters is ~46,000 values, and every booking created in
+ *    the same millisecond drew from that space. The unique index caught the
+ *    collisions, but `createBooking` reports a duplicate-key error as "one of
+ *    those slots was just booked by someone else" — so a ref clash under load
+ *    told the customer their slot had gone when it had not.
+ *  - `Math.random()` is not a CSPRNG and the timestamp half is public, so a
+ *    reference was substantially predictable. Nothing authorises on the ref
+ *    today (every lookup checks ownership), but a printed ticket that can be
+ *    guessed is not a good thing to leave lying around.
+ *
+ * 40 bits of crypto-grade randomness, still short enough to read down a phone.
+ */
+function shortRef(prefix) {
+  return prefix + crypto.randomBytes(5).toString('hex').toUpperCase();
+}
+
 bookingSchema.pre('validate', function makeRef(next) {
-  if (!this.bookingRef) {
-    this.bookingRef = 'GO' + Date.now().toString(36).toUpperCase() +
-      Math.random().toString(36).slice(2, 5).toUpperCase();
-  }
+  if (!this.bookingRef) this.bookingRef = shortRef('GO');
   next();
 });
+
+export { shortRef };
 
 export default mongoose.model('Booking', bookingSchema);

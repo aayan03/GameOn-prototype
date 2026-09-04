@@ -17,6 +17,15 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # The slot grid, the refund windows and the reminders are all expressed
+      # in the VENUE's wall-clock time. utils/time.js converts explicitly via
+      # APP_TIMEZONE so this is belt and braces rather than the mechanism, but
+      # a process whose own clock agrees with the venues is far easier to read
+      # a log against. Change both together if you launch another region.
+      - key: TZ
+        value: Asia/Kolkata
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
       - key: TRUST_PROXY
         value: "true"
       - key: LOG_LEVEL

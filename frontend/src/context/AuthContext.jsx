@@ -57,6 +57,23 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    /**
+     * Tell the server first.
+     *
+     * Clearing local storage used to be the whole of logout, so the refresh
+     * token stayed valid for its full thirty days — pressing Log out on a
+     * shared machine removed the token from that browser and from nowhere
+     * else. Revoking it server-side is what actually ends the session.
+     *
+     * Read before `tokenStore.clear()` below and not awaited: the request has
+     * the value it needs the moment it is called, and making the user watch a
+     * spinner to log out is how people close the tab instead.
+     */
+    try {
+      const refreshToken = tokenStore.refresh;
+      if (refreshToken) authApi.logout(refreshToken).catch(() => {});
+    } catch { /* best effort — never block a logout */ }
+
     // Unregister the device, or this phone keeps receiving the previous
     // account's booking notifications after someone else signs in.
     //

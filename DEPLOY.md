@@ -196,6 +196,34 @@ rejection, because the packets never leave the network. The same credentials
 authenticate perfectly from a laptop, so it reads as a code problem when it is
 a firewall.
 
+
+## Timezone — set this before you take a single booking
+
+The whole booking layer is expressed in the **venue's** wall-clock time: a slot
+is a `YYYY-MM-DD` key plus minutes-from-midnight, and opening hours, the
+free-cancellation window, the day-before reminder and the "this slot has
+passed" greying all key off it.
+
+Render, Railway, Fly and every `node:*-alpine` image run the process in **UTC**.
+If the venues are in India that is 5½ hours away from the clock the product is
+written for, and the symptom is not an error — it is a grid that quietly lets
+someone book a slot that started five hours ago.
+
+```
+APP_TIMEZONE=Asia/Kolkata
+TZ=Asia/Kolkata
+```
+
+`APP_TIMEZONE` is the one that matters: `utils/time.js` converts through it
+explicitly, so the app is correct even on a host whose own clock is wrong.
+There is deliberately **no fallback to the server's timezone** — an implicit
+fallback is how the bug survived this long. `TZ` is set alongside it only so
+log timestamps read the same way.
+
+Running somewhere else? Any IANA name works. On Alpine the image must also
+carry `tzdata` (the Dockerfile installs it) or Node cannot resolve a named
+zone at all — the app refuses to start rather than silently reverting to UTC.
+
 Use an HTTP provider instead. Both post over 443, which nothing blocks.
 
 **Brevo** (recommended — free 300/day, and you verify a single sender address

@@ -22,6 +22,12 @@ async function insertVenue(v, ownerId) {
     ...rest,
     owner: ownerId,
     location: { type: 'Point', coordinates: [lng, lat] },
+    // Explicit, because the schema no longer publishes a venue by default —
+    // see the note on Venue.moderationStatus. Without these two lines the
+    // development database seeds itself with venues nobody can see, which
+    // looks exactly like a broken search.
+    moderationStatus: 'approved',
+    isActive: true,
   });
 }
 
