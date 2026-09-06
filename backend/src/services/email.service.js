@@ -264,6 +264,75 @@ export function passwordResetEmail({ name, url, expiresMinutes }) {
   };
 }
 
+export function verifyEmail({ name, url, expiresMinutes }) {
+  return {
+    subject: 'Confirm your email to finish signing up',
+    text:
+      `Hi ${name},
+
+`
+      + `Confirm this address to finish creating your GameOn account:
+${url}
+
+`
+      + `The link works once and expires in ${expiresMinutes} minutes.
+
+`
+      + `Your account is not created until you open it. If you did not sign up, `
+      + `ignore this email — nothing has been created and you will not hear from us again.
+`,
+    html: wrap('Confirm your email', `
+      <p style="margin:0 0 16px;line-height:1.6">Hi ${escapeHtml(name)}, confirm this address to finish creating your GameOn account.</p>
+      <p style="margin:0 0 20px">${button(url, 'Confirm my email')}</p>
+      <p style="margin:0 0 10px;font-size:13px;color:#4A4658;line-height:1.6">
+        The link works once and expires in ${expiresMinutes} minutes.
+      </p>
+      <p style="margin:0;font-size:13px;color:#4A4658;line-height:1.6">
+        Your account is not created until you open it. If you did not sign up, ignore this
+        email — nothing has been created and you will not hear from us again.
+      </p>`),
+  };
+}
+
+/**
+ * Sent when somebody tries to register with an address that ALREADY has an
+ * account.
+ *
+ * The API answers that attempt exactly as it answers a real signup, so this
+ * email is the only place the difference is visible — and it goes to the
+ * person who owns the inbox rather than to whoever typed the address. If it
+ * was not them, it tells them someone is poking at their account; if it was,
+ * it saves them working out why the confirmation link never arrived.
+ */
+export function alreadyRegisteredEmail({ name, resetUrl }) {
+  return {
+    subject: 'You already have a GameOn account',
+    text:
+      `Hi ${name},
+
+`
+      + `Someone just tried to sign up with this email address, but you already have `
+      + `a GameOn account.
+
+`
+      + `If that was you, just log in — no need to sign up again. Forgotten your `
+      + `password? Reset it here:
+${resetUrl}
+
+`
+      + `If it was not you, you can safely ignore this. Nothing has changed and no new `
+      + `account was created.
+`,
+    html: wrap('You already have an account', `
+      <p style="margin:0 0 16px;line-height:1.6">Hi ${escapeHtml(name)}, someone just tried to sign up with this email address — but you already have a GameOn account.</p>
+      <p style="margin:0 0 16px;line-height:1.6">If that was you, just log in. No need to sign up again.</p>
+      <p style="margin:0 0 20px">${button(resetUrl, 'Reset my password')}</p>
+      <p style="margin:0;font-size:13px;color:#4A4658;line-height:1.6">
+        If it was not you, you can ignore this. Nothing has changed and no new account was created.
+      </p>`),
+  };
+}
+
 export function passwordChangedEmail({ name }) {
   return {
     subject: 'Your GameOn password was changed',

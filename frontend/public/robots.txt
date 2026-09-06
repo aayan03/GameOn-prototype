@@ -9,5 +9,9 @@ Disallow: /bookings
 Disallow: /profile
 Disallow: /loyalty
 Disallow: /teams
+# One-time credentials in the query string. Nothing to index, and no reason to
+# hand a crawler a signup or reset link.
+Disallow: /verify-email
+Disallow: /reset-password
 
 Sitemap: __SITE_URL__/sitemap.xml

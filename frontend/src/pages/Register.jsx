@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { authApi } from '../api/endpoints.js';
 import { SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
 export default function Register() {
   const { register } = useAuth();
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [form, setForm] = useState({
@@ -18,6 +18,10 @@ export default function Register() {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [busy, setBusy] = useState(false);
+  // Set once the signup email is away. Signing up no longer logs anyone in —
+  // the account does not exist until the emailed link is opened.
+  const [sent, setSent] = useState(null);
+  const [resent, setResent] = useState(false);
 
   const toggleSport = (s) => setForm((f) => ({
     ...f,
@@ -34,13 +38,74 @@ export default function Register() {
       if (!payload.phone) delete payload.phone;
       if (!payload.city) delete payload.city;
       if (!payload.favoriteSports.length) delete payload.favoriteSports;
-      const user = await register(payload);
-      navigate(user.role === 'owner' ? '/owner' : '/', { replace: true });
+      const result = await register(payload);
+      setSent(result);
     } catch (err) {
       setError(err.message);
       if (err.details) setFieldErrors(err.details);
     } finally { setBusy(false); }
   };
+
+  const resend = async () => {
+    setResent(true);
+    try {
+      const { data } = await authApi.resendVerification(form.email);
+      // In development the API hands the link straight back, because there is
+      // no inbox to check.
+      if (data?.devVerifyUrl) setSent((s0) => ({ ...s0, devVerifyUrl: data.devVerifyUrl }));
+    } catch { /* the answer is deliberately the same either way */ }
+  };
+
+  /**
+   * Confirmation screen.
+   *
+   * Deliberately says nothing about whether the address was already
+   * registered — the API answers identically either way, and repeating that
+   * here is what keeps signup from being a way to test whether somebody has
+   * an account.
+   */
+  if (sent) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card fade-in center">
+          <Link to="/" className="logo" style={{ color: 'var(--text)', justifyContent: 'center', marginBottom: 6 }}>
+            <span className="logo-mark">GO</span> GameOn
+          </Link>
+          <div style={{ fontSize: '2.6rem', marginTop: 10 }}>📬</div>
+          <h1 style={{ fontSize: '1.5rem' }}>Check your email</h1>
+          <p className="text-soft" style={{ marginTop: 8 }}>
+            We sent a link to <strong>{form.email}</strong>. Open it to finish
+            creating your account — it expires in an hour.
+          </p>
+          <p className="text-faint" style={{ marginTop: 12, fontSize: '.88rem' }}>
+            Nothing in your inbox? Check spam, then try again below.
+          </p>
+
+          {sent.devVerifyUrl && (
+            <div className="alert alert-info" style={{ marginTop: 16, display: 'block', textAlign: 'left' }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>Development only</strong>
+              No email transport is configured, so here is the link:{' '}
+              <a href={sent.devVerifyUrl} style={{ wordBreak: 'break-all' }}>{sent.devVerifyUrl}</a>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 18 }}
+            onClick={resend}
+            disabled={resent}
+          >
+            {resent ? 'Sent — check again in a minute' : 'Resend the link'}
+          </button>
+
+          <p className="text-faint" style={{ marginTop: 18, fontSize: '.9rem' }}>
+            Already confirmed? <Link to="/login">Log in</Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-page">

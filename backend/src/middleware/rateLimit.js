@@ -75,6 +75,25 @@ export const registerLimiter = makeLimiter({
   message: message('Too many accounts created from this network. Try again later.'),
 });
 
+/**
+ * Confirming a signup link.
+ *
+ * Its own bucket rather than sharing `registerLimiter`, because completing a
+ * signup now costs TWO requests — one to start it, one to confirm — and
+ * charging both to the same ten-an-hour budget halves how many real people
+ * can sign up from one office or one mobile carrier NAT.
+ *
+ * Generous, because the token is 256 bits of entropy: guessing one is not a
+ * threat this limiter is defending against. It is here to stop somebody
+ * hammering the endpoint, nothing more.
+ */
+export const verifyLimiter = makeLimiter({
+  ...base,
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  message: message('Too many attempts. Try again in a little while.'),
+});
+
 /** Anything that moves money or creates a booking. */
 export const writeLimiter = makeLimiter({
   ...base,

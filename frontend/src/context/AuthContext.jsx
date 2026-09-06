@@ -48,8 +48,22 @@ export function AuthProvider({ children }) {
     return data.user;
   }, []);
 
+  /**
+   * Starts a signup. Does NOT sign anyone in.
+   *
+   * The account is not created until the emailed link is opened — see
+   * PendingRegistration on the API. So this returns what the server said
+   * ("check your inbox") rather than a user, and the caller shows that
+   * instead of navigating into the app.
+   */
   const register = useCallback(async (payload) => {
     const { data } = await authApi.register(payload);
+    return data;
+  }, []);
+
+  /** Completes a signup from the emailed link, and signs the new account in. */
+  const verifyEmail = useCallback(async (token) => {
+    const { data } = await authApi.verifyEmail(token);
     tokenStore.set(data.accessToken, data.refreshToken);
     setUser(data.user);
     setLoyalty(data.loyalty || null);
@@ -118,11 +132,11 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, loyalty, loading, login, register, logout, updateProfile,
+    user, loyalty, loading, login, register, verifyEmail, logout, updateProfile,
     setUser, setLoyalty,
     isAuthenticated: Boolean(user),
     isOwner: user?.role === 'owner' || user?.role === 'admin',
-  }), [user, loyalty, loading, login, register, logout, updateProfile]);
+  }), [user, loyalty, loading, login, register, verifyEmail, logout, updateProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

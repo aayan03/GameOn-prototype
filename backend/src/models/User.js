@@ -57,7 +57,26 @@ const userSchema = new mongoose.Schema(
     reliabilityScore: { type: Number, default: 100, min: 0, max: 100 },
     gamesPlayed: { type: Number, default: 0 },
 
+    /**
+     * Set by an ADMIN, and nothing to do with email.
+     *
+     * This is "we have vetted this owner", and it is what lets their venues
+     * publish without moderation (see venue.controller.js#createVenue).
+     * Deliberately NOT reused for email verification: every account that
+     * confirmed an inbox would then auto-publish venues nobody had reviewed.
+     */
     isVerified: { type: Boolean, default: false },
+
+    /**
+     * When this person proved they can read the address they signed up with.
+     *
+     * Null on accounts created before email verification existed. They are
+     * treated as verified — an account somebody has been using for months is
+     * not suddenly untrustworthy because a feature shipped — so nothing
+     * enforces on this field. It exists because every account created from
+     * now on genuinely has it, which makes it worth showing to an admin.
+     */
+    emailVerifiedAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true },
 
     // Brute-force protection. Rate limiting is per-IP; this is per-account,

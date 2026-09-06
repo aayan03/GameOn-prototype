@@ -44,6 +44,8 @@ const OwnerVenueNew  = lazy(() => import('./pages/OwnerVenueNew.jsx'));
 const Admin          = lazy(() => import('./pages/Admin.jsx'));
 const Notifications  = lazy(() => import('./pages/Notifications.jsx'));
 const NotFound       = lazy(() => import('./pages/NotFound.jsx'));
+// The other end of the signup link — this is where the account is created.
+const VerifyEmail    = lazy(() => import('./pages/VerifyEmail.jsx'));
 
 /**
  * Terms, Privacy, Refunds and Contact.
@@ -122,6 +124,8 @@ export default function App() {
 
                     {/* Admin — the role is only assignable directly in the database */}
                     <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />
+
+                    <Route path="/verify-email" element={<VerifyEmail />} />
 
                     {/* Public policy pages — no session required. */}
                     <Route path="/terms"    element={<Terms />} />

@@ -156,19 +156,50 @@ export const del = (p, opts) => api('DELETE', p, opts);
 let seq = 0;
 export const uniqueEmail = (prefix = 'user') => `${prefix}${++seq}.${Date.now()}@example.com`;
 
-/** Registers an account and returns its tokens plus the user object. */
+/** Pulls the one-time token out of a verification or reset URL. */
+export function tokenFromUrl(url) {
+  if (!url) return null;
+  return new URL(url, 'http://localhost').searchParams.get('token');
+}
+
+/**
+ * Registers an account AND confirms the email, returning a usable session.
+ *
+ * Signing up no longer creates an account on its own — it emails a link, and
+ * the account is created when that link is opened. With no email transport
+ * configured (which is how the suite runs) the API hands the link straight
+ * back as `devVerifyUrl`, so this walks the real two-step flow rather than
+ * reaching into the database behind it.
+ *
+ * Tests that care about the halfway state should call `/api/auth/register`
+ * themselves; this helper exists for the hundred tests that just need a user.
+ */
 export async function createUser({ role = 'player', password = 'Password123', ...rest } = {}) {
   const email = rest.email || uniqueEmail(role);
-  const res = await post('/api/auth/register', {
+
+  const started = await post('/api/auth/register', {
     name: rest.name || 'Test User',
     email,
     password,
     role,
     ...(rest.city ? { city: rest.city } : {}),
   });
-  if (res.status !== 201) {
-    throw new Error(`createUser failed (${res.status}): ${JSON.stringify(res.body)}`);
+  if (started.status !== 200) {
+    throw new Error(`register failed (${started.status}): ${JSON.stringify(started.body)}`);
   }
+
+  const token = tokenFromUrl(started.body?.data?.devVerifyUrl);
+  if (!token) {
+    throw new Error(
+      `no devVerifyUrl in the register response — is an email transport configured? ${JSON.stringify(started.body)}`
+    );
+  }
+
+  const res = await post('/api/auth/verify-email', { token });
+  if (res.status !== 201) {
+    throw new Error(`verify-email failed (${res.status}): ${JSON.stringify(res.body)}`);
+  }
+
   return {
     email,
     password,

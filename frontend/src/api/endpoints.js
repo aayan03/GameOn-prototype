@@ -3,6 +3,12 @@ import api from './client.js';
 export const authApi = {
   register: (payload) => api.post('/auth/register', payload, { auth: false }),
   login:    (payload) => api.post('/auth/login', payload, { auth: false }),
+  /**
+   * Registration no longer returns a session — it emails a link, and the
+   * account is created when that link is opened.
+   */
+  verifyEmail: (token) => api.post('/auth/verify-email', { token }, { auth: false }),
+  resendVerification: (email) => api.post('/auth/resend-verification', { email }, { auth: false }),
   me:       () => api.get('/auth/me'),
   updateMe: (payload) => api.patch('/auth/me', payload),
   changePassword: (payload) => api.post('/auth/change-password', payload),

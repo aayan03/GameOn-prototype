@@ -10,3 +10,4 @@ export { default as Payout } from './Payout.js';
 export { default as Notification } from './Notification.js';
 export { default as RevokedToken } from './RevokedToken.js';
 export { default as PromoRedemption } from './PromoRedemption.js';
+export { default as PendingRegistration } from './PendingRegistration.js';

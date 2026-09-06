@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import {
   startTestServer, stopTestServer, resetDatabase,
-  get, post, patch, createUser, uniqueEmail,
+  get, post, patch, createUser, uniqueEmail, tokenFromUrl,
 } from '../helpers/harness.mjs';
 
 before(startTestServer);
@@ -12,13 +12,35 @@ beforeEach(resetDatabase);
 
 /* ── Registration ────────────────────────────────────────────── */
 
-test('registers a player and returns a usable session', async () => {
+test('signing up emails a link and creates nothing yet', async () => {
   const email = uniqueEmail('player');
   const res = await post('/api/auth/register', {
     name: 'Aayan', email, password: 'Password123', role: 'player',
   });
 
-  assert.equal(res.status, 201);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.sent, true);
+  assert.ok(!res.body.data.accessToken, 'no session before the address is proved');
+
+  // The account does not exist yet. This is what stops registration being an
+  // account-existence oracle: no password the caller chose works either way.
+  assert.equal(await mongoose.model('User').countDocuments({ email }), 0);
+  assert.equal(await mongoose.model('PendingRegistration').countDocuments({ email }), 1);
+
+  const login = await post('/api/auth/login', { email, password: 'Password123' });
+  assert.equal(login.status, 401, 'the chosen password does not work before verification');
+});
+
+test('opening the link creates the account and signs you in', async () => {
+  const email = uniqueEmail('player');
+  const started = await post('/api/auth/register', {
+    name: 'Aayan', email, password: 'Password123', role: 'player',
+  });
+  const token = tokenFromUrl(started.body.data.devVerifyUrl);
+  assert.ok(token, 'the dev response hands back the link');
+
+  const res = await post('/api/auth/verify-email', { token });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.data.user.email, email);
   assert.ok(res.body.data.accessToken, 'access token issued');
   assert.ok(res.body.data.refreshToken, 'refresh token issued');
@@ -26,15 +48,55 @@ test('registers a player and returns a usable session', async () => {
   const me = await get('/api/auth/me', { token: res.body.data.accessToken });
   assert.equal(me.status, 200);
   assert.equal(me.body.data.user.email, email);
+
+  // The password chosen at signup works, so the hash crossed the pending row
+  // without being bcrypted a second time.
+  const login = await post('/api/auth/login', { email, password: 'Password123' });
+  assert.equal(login.status, 200);
+
+  // The pending row is consumed, so the link cannot be replayed.
+  assert.equal(await mongoose.model('PendingRegistration').countDocuments({ email }), 0);
+  const replay = await post('/api/auth/verify-email', { token });
+  assert.equal(replay.status, 400, 'a verification link works exactly once');
+});
+
+test('an expired or forged verification link is refused', async () => {
+  const email = uniqueEmail('player');
+  const started = await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
+  const token = tokenFromUrl(started.body.data.devVerifyUrl);
+
+  const forged = await post('/api/auth/verify-email', { token: 'x'.repeat(43) });
+  assert.equal(forged.status, 400);
+
+  await mongoose.model('PendingRegistration').updateOne(
+    { email }, { $set: { expiresAt: new Date(Date.now() - 1000) } },
+  );
+  const expired = await post('/api/auth/verify-email', { token });
+  assert.equal(expired.status, 400);
+  assert.equal(await mongoose.model('User').countDocuments({ email }), 0);
 });
 
 test('never returns the password hash', async () => {
-  const res = await post('/api/auth/register', {
-    name: 'Aayan', email: uniqueEmail(), password: 'Password123',
+  const u = await createUser();
+  const me = await get('/api/auth/me', { token: u.token });
+  assert.ok(!JSON.stringify(me.body).includes('password'), 'no password field in the response');
+  assert.equal(me.body.data.user.password, undefined);
+
+  const started = await post('/api/auth/register', {
+    name: 'B', email: uniqueEmail(), password: 'Password123',
   });
-  const serialised = JSON.stringify(res.body);
-  assert.ok(!serialised.includes('password'), 'no password field in the response');
-  assert.equal(res.body.data.user.password, undefined);
+  assert.ok(!JSON.stringify(started.body).includes('Password123'), 'the plaintext is never echoed');
+});
+
+test('a pending signup stores a hash and a hashed token, never the originals', async () => {
+  const email = uniqueEmail();
+  const started = await post('/api/auth/register', { name: 'Cyd', email, password: 'Password123' });
+  const token = tokenFromUrl(started.body.data.devVerifyUrl);
+
+  const row = await mongoose.model('PendingRegistration').findOne({ email }).lean();
+  assert.ok(row.passwordHash.startsWith('$2'), 'bcrypt hash');
+  assert.ok(!JSON.stringify(row).includes('Password123'), 'no plaintext password');
+  assert.ok(!JSON.stringify(row).includes(token), 'no raw token - a dump is not a list of working links');
 });
 
 test('rejects a weak password with a field-level message', async () => {
@@ -52,13 +114,64 @@ test('rejects a password with no digit', async () => {
   assert.equal(res.status, 400);
 });
 
-test('refuses a duplicate email', async () => {
-  const email = uniqueEmail();
-  const first = await post('/api/auth/register', { name: 'First Person', email, password: 'Password123' });
-  assert.equal(first.status, 201);
+test('signing up on a taken address is indistinguishable from a fresh one', async () => {
+  const taken = (await createUser()).email;
+  const fresh = uniqueEmail();
 
-  const second = await post('/api/auth/register', { name: 'Second Person', email, password: 'Password123' });
-  assert.equal(second.status, 409);
+  // Deliberately NOT the password the real account has - the point is that a
+  // password the caller invents never works on an address they do not own.
+  const guessed = 'AttackerChose99';
+  const onTaken = await post('/api/auth/register', { name: 'Second Person', email: taken, password: guessed });
+  const onFresh = await post('/api/auth/register', { name: 'New Person', email: fresh, password: guessed });
+
+  // Same status, same body. Registration used to answer 409 for an address
+  // that existed, which let anyone test a list of emails against the platform.
+  assert.equal(onTaken.status, onFresh.status, 'same status');
+  assert.equal(onTaken.body.data.sent, onFresh.body.data.sent);
+  assert.equal(onTaken.body.data.message, onFresh.body.data.message, 'same message');
+
+  // Nothing is created for the address that was already taken.
+  assert.equal(await mongoose.model('PendingRegistration').countDocuments({ email: taken }), 0);
+
+  // And the password the caller chose does not work on the existing account,
+  // which is the second half of the oracle and the reason the account cannot
+  // be created before the inbox is proved.
+  const login = await post('/api/auth/login', { email: taken, password: guessed });
+  assert.equal(login.status, 401);
+});
+
+test('a second signup attempt replaces the first link', async () => {
+  const email = uniqueEmail();
+  const first = await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
+  const firstToken = tokenFromUrl(first.body.data.devVerifyUrl);
+
+  const second = await post('/api/auth/register', { name: 'Ada', email, password: 'Different456' });
+  const secondToken = tokenFromUrl(second.body.data.devVerifyUrl);
+  assert.notEqual(firstToken, secondToken);
+
+  assert.equal((await post('/api/auth/verify-email', { token: firstToken })).status, 400,
+    'the superseded link is dead');
+  assert.equal((await post('/api/auth/verify-email', { token: secondToken })).status, 201);
+
+  // The account carries the password from the attempt that was confirmed.
+  assert.equal((await post('/api/auth/login', { email, password: 'Different456' })).status, 200);
+  assert.equal((await post('/api/auth/login', { email, password: 'Password123' })).status, 401);
+});
+
+test('resend is throttled per address and never leaks existence', async () => {
+  const email = uniqueEmail();
+  await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
+
+  const known = await post('/api/auth/resend-verification', { email });
+  const unknown = await post('/api/auth/resend-verification', { email: 'nobody@example.com' });
+  assert.equal(known.status, unknown.status, 'same status');
+  assert.equal(known.body.data.message, unknown.body.data.message, 'same message');
+
+  // Immediately again: the cooldown suppresses the email, but the answer is
+  // identical, so the throttle is not an oracle either.
+  const again = await post('/api/auth/resend-verification', { email });
+  assert.equal(again.status, 200);
+  assert.equal(again.body.data.devVerifyUrl, undefined, 'no new link inside the cooldown');
 });
 
 test('privilege escalation through the register body is rejected', async () => {

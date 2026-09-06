@@ -477,6 +477,10 @@ were made is more useful than a claim that none were.
 
 ### Configuration
 - [x] Server refuses to boot in production with default or weak secrets
+- [x] Signup is verify-by-email. The account is created when the emailed link
+      is opened, not when the form is submitted — so `POST /auth/register`
+      answers identically for a taken address and a fresh one, and no password
+      the caller invents ever works on an address they do not own
 - [x] `.env` is gitignored; `.env.example` carries no real values
 - [x] `TRUST_PROXY` is opt-in, so `X-Forwarded-For` cannot be spoofed off-proxy
 
@@ -529,9 +533,6 @@ were made is more useful than a claim that none were.
       exact production origin when you can.
 - [ ] **Move off the free Render tier**, or accept a 30–50 second cold start on
       the first request after 15 minutes idle.
-- [ ] **Add email verification.** Anyone can register with any address, which is
-      why owner listings need manual review — and it is what still makes
-      `POST /auth/register` reveal whether an address is already registered.
 - [ ] Rotate `JWT_SECRET` and `JWT_REFRESH_SECRET` if they are ever exposed.
 - [ ] Decide how long a manual venue gets to answer. The lifecycle job expires
       an unanswered request 2 hours before kickoff, and never sooner than 45

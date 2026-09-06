@@ -1,12 +1,21 @@
 import { Router } from 'express';
 import validate from '../middleware/validate.js';
 import { protect } from '../middleware/auth.js';
-import { authLimiter, registerLimiter, passwordResetLimiter } from '../middleware/rateLimit.js';
+import { authLimiter, registerLimiter, passwordResetLimiter, verifyLimiter } from '../middleware/rateLimit.js';
 import * as ctrl from '../controllers/auth.controller.js';
 
 const router = Router();
 
+/**
+ * Registration does not create an account any more — it emails a link, and
+ * the account is created when that link is opened. `passwordResetLimiter`
+ * rather than `registerLimiter` on the two email-sending routes: both answer
+ * 200 whatever happens, so a limiter that skips successful requests would
+ * never count anything.
+ */
 router.post('/register', registerLimiter, validate(ctrl.registerSchema), ctrl.register);
+router.post('/verify-email', verifyLimiter, validate(ctrl.verifyEmailSchema), ctrl.verifyEmail);
+router.post('/resend-verification', passwordResetLimiter, validate(ctrl.resendVerificationSchema), ctrl.resendVerification);
 router.post('/login', authLimiter, validate(ctrl.loginSchema), ctrl.login);
 router.post('/refresh', authLimiter, ctrl.refresh);
 

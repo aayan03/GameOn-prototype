@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import crypto from 'node:crypto';
-import { User } from '../models/index.js';
+import bcrypt from 'bcryptjs';
+import { User, PendingRegistration } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok, created } from '../utils/response.js';
@@ -54,6 +55,12 @@ function throttleFor(failures) {
 
 // A reset link is a bearer credential for an account, so it is short-lived.
 const RESET_TOKEN_MINUTES = 30;
+
+// A verification link creates an account, so it is short-lived too — but long
+// enough to survive a slow inbox and someone finishing their coffee.
+const VERIFY_TOKEN_MINUTES = 60;
+// One verification email per address per minute, whoever asks for it.
+const VERIFY_COOLDOWN_MS = 60_000;
 // One reset email per account per minute. The per-IP limiter does not help
 // here: the target is someone else's inbox, and the requests can come from
 // anywhere.
@@ -121,38 +128,222 @@ function authPayload(user) {
   };
 }
 
+/**
+ * The one answer registration ever gives.
+ *
+ * Identical for a brand-new address and for one that already has an account,
+ * because anything else is a membership oracle — and `login` and
+ * `forgotPassword` both go out of their way not to be one.
+ */
+const CHECK_YOUR_INBOX = {
+  sent: true,
+  message: 'Check your email for a link to finish signing up. It expires in an hour — the spam folder is worth a look too.',
+};
+
 export const register = asyncHandler(async (req, res) => {
-  const { email } = req.body;
+  const { email: address, password, name, phone, role, city, favoriteSports } = req.body;
 
   /**
-   * This endpoint DOES tell you whether an address is registered, and there
-   * is no way around that while signing up hands back a session: a real new
-   * account gets tokens, and an existing one cannot.
+   * The account is NOT created here. It is created when the link is clicked.
    *
-   * What is fixed here is the second signal. The conflict answered in a few
-   * milliseconds while a real signup spent ~100ms hashing a password with
-   * bcrypt, so the two were trivially separable even by something that
-   * ignored the status code entirely. Matching the timing means the only
-   * remaining signal is the deliberate one, which `registerLimiter` bounds to
-   * ten addresses an hour per IP.
+   * Creating it now and marking it unverified does not close the enumeration
+   * leak, it only moves it one step: the attacker chose the password, so they
+   * register with victim@example.com and then try to log in with it. Success
+   * means the address was free; failure means it was taken. Same oracle.
    *
-   * Closing it completely means moving to a verify-by-email signup, where the
-   * answer is always "check your inbox" and no session is issued until the
-   * link is clicked. That is a product decision, not a patch.
+   * Holding the signup in PendingRegistration instead means no password the
+   * attacker picked ever works, in either case, so there is nothing to
+   * compare. The answer below is the same object either way.
+   *
+   * Both branches hash a password with bcrypt before replying, so they also
+   * take the same time — that hash was the reason the two used to be
+   * separable even by something ignoring the status code.
    */
-  if (await User.exists({ email })) {
-    await sleep(120);
-    throw ApiError.conflict('An account with this email already exists');
+  const passwordHash = await bcrypt.hash(password, 10);
+  const token = crypto.randomBytes(32).toString('base64url');
+  const url = `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
+
+  const existing = await User.findOne({ email: address }).select('name email').lean();
+
+  if (existing) {
+    /**
+     * Tell the INBOX, not the caller.
+     *
+     * Whoever owns this address either forgot they had an account or is being
+     * probed by somebody else. Either way they are the one who should hear
+     * about it, and the API says exactly what it says below.
+     */
+    email.deliver({
+      to: existing.email,
+      ...email.alreadyRegisteredEmail({
+        name: existing.name,
+        resetUrl: `${appUrl()}/forgot-password`,
+      }),
+    }).catch((err) => logger.warn('already-registered notice failed', { err }));
+
+    logger.info('signup attempted on an address that already has an account', {
+      userId: String(existing._id),
+    });
+    return ok(res, CHECK_YOUR_INBOX);
   }
 
-  const user = await User.create({
-    ...req.body,
+  // Replaces any earlier pending signup for this address, which is also what
+  // retires a link that was already sent.
+  await PendingRegistration.findOneAndUpdate(
+    { email: address },
+    {
+      $set: {
+        email: address,
+        name: cleanText(name, 60),
+        passwordHash,
+        phone: phone || '',
+        role: role || ROLES.PLAYER,
+        city: cleanText(city || '', 60),
+        favoriteSports: favoriteSports || [],
+        tokenHash: hashToken(token),
+        expiresAt: new Date(Date.now() + VERIFY_TOKEN_MINUTES * 60_000),
+        lastSentAt: new Date(),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+
+  const message = email.verifyEmail({ name, url, expiresMinutes: VERIFY_TOKEN_MINUTES });
+
+  // In development there is no transport, so `deliver` returns synchronously
+  // in console mode and the link comes straight back — there is no inbox to
+  // check. That branch cannot run in production: validateEnv refuses to boot
+  // without an email transport configured.
+  if (!email.isConfigured()) {
+    const result = await email.deliver({ to: address, ...message });
+    return ok(res, {
+      ...CHECK_YOUR_INBOX,
+      ...(!isProd() && result.mode === 'console' ? { devVerifyUrl: url } : {}),
+    });
+  }
+
+  email.deliver({ to: address, ...message })
+    .then((r) => {
+      if (r.delivered) return;
+      // Nobody is holding a usable link, so do not leave the address locked
+      // up in a pending row for an hour.
+      PendingRegistration.deleteOne({ email: address }).catch(() => {});
+      logger.error('verification email failed - pending signup cleared', { email: address });
+    })
+    .catch(() => { PendingRegistration.deleteOne({ email: address }).catch(() => {}); });
+
+  return ok(res, CHECK_YOUR_INBOX);
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().trim().min(20).max(200),
+}).strict();
+
+/**
+ * POST /api/auth/verify-email
+ *
+ * Turns a pending signup into a real account. This is the ONLY path that
+ * creates a user, so every account on the platform belongs to somebody who
+ * could read the address they claimed.
+ */
+export const verifyEmail = asyncHandler(async (req, res) => {
+  // Claim the pending row by deleting it. A link clicked twice — or replayed
+  // by whoever intercepted it — finds nothing the second time.
+  const pending = await PendingRegistration.findOneAndDelete({
+    tokenHash: hashToken(req.body.token),
+    expiresAt: { $gt: new Date() },
+  }).lean();
+
+  if (!pending) {
+    throw ApiError.badRequest('That link is invalid or has expired. Sign up again to get a new one.');
+  }
+
+  // Somebody registered this address by another route in the meantime.
+  if (await User.exists({ email: pending.email })) {
+    throw ApiError.conflict('That email already has an account. Try logging in instead.');
+  }
+
+  const user = new User({
+    name: pending.name,
+    email: pending.email,
+    ...(pending.phone ? { phone: pending.phone } : {}),
+    role: pending.role,
+    city: pending.city,
+    favoriteSports: pending.favoriteSports,
+    emailVerifiedAt: new Date(),
     // Welcome points, so the loyalty screen isn't empty on day one.
     loyaltyPoints: LOYALTY.SIGNUP_BONUS,
     lifetimePoints: LOYALTY.SIGNUP_BONUS,
   });
 
-  return created(res, authPayload(user));
+  /**
+   * The password is ALREADY hashed — carry it across without re-hashing.
+   *
+   * `User.pre('save')` hashes anything it sees as modified, and on a new
+   * document every field is modified. Passing the hash in the constructor
+   * therefore bcrypts the bcrypt, producing an account whose password can
+   * never match anything the owner types. `unmarkModified` is what tells the
+   * hook this value is already in its final form.
+   */
+  user.password = pending.passwordHash;
+  user.unmarkModified('password');
+  await user.save();
+
+  logger.info('account created after email verification', { userId: String(user._id) });
+
+  return created(res, {
+    ...authPayload(user),
+    message: `Welcome to GameOn, ${user.name.split(' ')[0]}.`,
+  });
+});
+
+export const resendVerificationSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Enter a valid email').max(160),
+}).strict();
+
+/**
+ * POST /api/auth/resend-verification
+ *
+ * The same single answer as register, for the same reason — this must not
+ * become the oracle that register is not.
+ */
+export const resendVerification = asyncHandler(async (req, res) => {
+  const pending = await PendingRegistration.findOne({ email: req.body.email });
+  if (!pending) return ok(res, CHECK_YOUR_INBOX);
+
+  // Per-address cooldown, so this cannot be used to bombard one inbox from a
+  // botnet the per-IP limiter cannot see.
+  if (pending.lastSentAt && Date.now() - pending.lastSentAt.getTime() < VERIFY_COOLDOWN_MS) {
+    return ok(res, CHECK_YOUR_INBOX);
+  }
+
+  const token = crypto.randomBytes(32).toString('base64url');
+  const url = `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
+
+  await PendingRegistration.updateOne({ _id: pending._id }, {
+    $set: {
+      tokenHash: hashToken(token),
+      expiresAt: new Date(Date.now() + VERIFY_TOKEN_MINUTES * 60_000),
+      lastSentAt: new Date(),
+    },
+  });
+
+  const message = email.verifyEmail({
+    name: pending.name, url, expiresMinutes: VERIFY_TOKEN_MINUTES,
+  });
+
+  if (!email.isConfigured()) {
+    const result = await email.deliver({ to: pending.email, ...message });
+    return ok(res, {
+      ...CHECK_YOUR_INBOX,
+      ...(!isProd() && result.mode === 'console' ? { devVerifyUrl: url } : {}),
+    });
+  }
+
+  email.deliver({ to: pending.email, ...message })
+    .catch((err) => logger.warn('verification resend failed', { err }));
+
+  return ok(res, CHECK_YOUR_INBOX);
 });
 
 export const login = asyncHandler(async (req, res) => {
