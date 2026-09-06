@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { initials, rupees } from '../utils/format.js';
 import TierBadge from './TierBadge.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle } from './Icons.jsx';
 
 export default function Navbar() {
@@ -52,6 +53,9 @@ export default function Navbar() {
         </nav>
 
         <div className="nav-right">
+          {/* Before the bell, so it does not move when a notification badge
+              appears and changes the bell's width. */}
+          <ThemeToggle />
           <NotificationBell />
           {isAuthenticated ? (
             <div className="user-menu" ref={menuRef}>

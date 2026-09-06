@@ -3,11 +3,33 @@
    Palette lifted from the investor deck; the shape language is
    deliberately chunky — thick ink outlines, hard offset shadows,
    generous radii. Everything looks pressable, because it is.
+
+   ── Theming ──────────────────────────────────────────────────
+   Both themes live entirely in the variables below. Nothing in
+   app.css knows which one is running.
+
+   `--ink` used to do three jobs at once: the line around cards,
+   the hard shadow behind them, and the fill of the dark slabs
+   (hero, loyalty strip, owner CTA). That works while there is
+   one theme and breaks immediately when there are two, because
+   in the dark those jobs pull in opposite directions — an
+   outline has to get LIGHTER to stay visible on a dark card,
+   while a dark slab has to get DARKER to stay distinct from the
+   page behind it.
+
+   So the outline is `--stroke` and the shadow is `--sh-color`.
+   Both are `--ink` in the light theme, which is why one token
+   was enough for so long. Keeping `--ink` for the slabs is what
+   lets the hero stay a well rather than turning white.
+
+   The numbers here are measured, not guessed — see the contrast
+   assertions in src/__tests__/theme.test.js.
    ═══════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
+  color-scheme: light;
   /* ── Brand ─────────────────────────────────────────────── */
   --ink:        #16162B;   /* near-black navy — every outline is this */
   --ink-2:      #232343;
@@ -29,15 +51,26 @@
   --bg-2:       #F3EFE6;
   --surface:    #FFFFFF;
   --surface-2:  #F6F3EC;
-  --border:     var(--ink);
+  --border:     var(--stroke);
   --hairline:   #E6E0D4;
 
   --text:       #16162B;
   --text-soft:  #55506B;
-  --text-faint: #8B85A0;
+  --text-faint: #726C87;
+
+  /**
+   * The line around things, as distinct from the dark slab.
+   *
+   * They are the same colour in the light theme, which is why this used to be
+   * one token. They cannot be in the dark theme: an outline has to contrast
+   * with the surface it encloses, so it goes light, while a dark panel like
+   * the hero has to go darker than the page. Splitting them is what lets the
+   * sticker language survive the inversion.
+   */
+  --stroke:     var(--ink);
 
   /* ── Status ────────────────────────────────────────────── */
-  --success:    #12A150;
+  --success:    #0E8641;
   --success-soft:#DFF7E9;
   --warning:    #C77400;
   --warning-soft:#FFF0D6;
@@ -57,18 +90,24 @@
   --bw-thin: 2px;
   --bw-fat:  3px;
 
-  /* ── Hard offset shadows (no blur — that's the "sticker" feel) ── */
-  --sh-xs:  2px 2px 0 var(--ink);
-  --sh-sm:  3px 3px 0 var(--ink);
-  --sh:     5px 5px 0 var(--ink);
-  --sh-lg:  8px 8px 0 var(--ink);
-  --sh-xl:  12px 12px 0 var(--ink);
+  /* ── Hard offset shadows (no blur — that's the "sticker" feel) ──
+     Keyed off their own variable rather than `--ink` directly, so a
+     theme can move the shadow without moving every outline with it. */
+  --sh-color: var(--ink);
+  --sh-xs:  2px 2px 0 var(--sh-color);
+  --sh-sm:  3px 3px 0 var(--sh-color);
+  --sh:     5px 5px 0 var(--sh-color);
+  --sh-lg:  8px 8px 0 var(--sh-color);
+  --sh-xl:  12px 12px 0 var(--sh-color);
   /* Coloured variants for accent surfaces */
   --sh-volt:    5px 5px 0 var(--volt);
   --sh-magenta: 5px 5px 0 var(--magenta);
   --sh-violet:  5px 5px 0 var(--violet);
   /* One soft shadow, used only for floating overlays */
   --sh-float: 0 18px 50px rgba(22,22,43,.22);
+  /* The body's paper grain. Ink-coloured on light; on a dark ground a dark
+     grain is invisible, so it inverts to a faint light speckle. */
+  --grain: rgba(22,22,43,.028);
 
   /* ── Motion ────────────────────────────────────────────── */
   --spring: cubic-bezier(.34, 1.56, .64, 1);   /* overshoots — feels bouncy */
@@ -81,6 +120,131 @@
   --nav-h:    72px;
   --tabbar-h: 68px;
   --maxw:     1240px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME
+   ═══════════════════════════════════════════════════════════════
+
+   Written once, applied from two places:
+
+     [data-theme="dark"]                       an explicit choice
+     @media (prefers-color-scheme: dark)       the system default,
+       :root:not([data-theme="light"])         unless overridden
+
+   The `:not([data-theme="light"])` guard is what lets someone on a
+   dark OS deliberately choose light and have it stick. Without it
+   the media query wins and the toggle appears broken in one
+   direction only — which is a maddening bug to be on the wrong end
+   of.
+
+   Only the tokens are redefined. Nothing below this block, and
+   nothing in app.css, knows which theme is running.
+   ─────────────────────────────────────────────────────────────── */
+/* Duplicated rather than shared, because a media query cannot join a
+   selector list and this project has no CSS preprocessor. Keep the two
+   blocks in step. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* The dark slabs — hero, loyalty strip, owner CTA — go DARKER than the
+     page rather than lighter. In the light theme the hero is a dark block on
+     paper; here it becomes a well cut into the dark. Measured at 1.19:1
+     against --bg, which is the least separation at which the section edge is
+     still legible. */
+  --ink:        #05050C;
+  --ink-2:      #0E0E22;
+  --ink-3:      #1C1C3A;
+
+  /* Accents hold up on a dark ground — they were already saturated
+     enough to sit on the ink-coloured hero. The soft variants do
+     not: they are near-white pastels, so they become deep tints of
+     the same hue or every badge on the page turns into a lightbulb. */
+  --volt-soft:  #2E3A0B;
+  --magenta-soft:#3D1024;
+  --violet-soft:#221546;
+  --orange-soft:#3A2408;
+  --sky-soft:   #0A2C3C;
+
+  --bg:         #181831;   /* deep navy, still warm-leaning */
+  --bg-2:       #1D1D3B;
+  --surface:    #23234A;   /* clearly lighter than bg, so cards lift */
+  --surface-2:  #2B2B58;
+  --hairline:   #33335C;
+
+  --text:       #F1EFFA;
+  --text-soft:  #B9B3D4;
+  --text-faint: #9C96BA;
+
+  /* The violet used for eyebrows and focus rings is only 2.85:1 on the dark
+     ground. Lifted here rather than lightened globally, because the light
+     theme needs it dark enough to sit on paper. */
+  --violet:     #9B7CFF;
+
+  /* Status colours brighten; their backgrounds darken. */
+  --success:    #3DDC84;
+  --success-soft:#0C2E1C;
+  --warning:    #FFC24D;
+  --warning-soft:#3A2A05;
+  --danger:     #FF6B85;
+  --danger-soft:#3D0F1B;
+
+  /* Outlines invert. On a dark ground a near-black stroke is invisible
+     (measured: 1.36:1 against the card surface), so the line goes light
+     and the card reads as cut out of the dark rather than drawn on it. */
+  --stroke:     #EAE6F8;
+  /* The hard shadow follows it, one step dimmer, so the outline stays the
+     crisper of the two and the shadow reads as an echo rather than a
+     second border. */
+  --sh-color:   #A9A3C8;
+
+  /* A blurred dark shadow does nothing on a dark ground — deepen it so
+     floating overlays still detach from the page. */
+  --sh-float: 0 18px 50px rgba(0,0,0,.6);
+  --grain: rgba(255,255,255,.035);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --ink:        #05050C;
+    --ink-2:      #0E0E22;
+    --ink-3:      #1C1C3A;
+    --volt-soft:  #2E3A0B;
+    --magenta-soft:#3D1024;
+    --violet-soft:#221546;
+    --orange-soft:#3A2408;
+    --sky-soft:   #0A2C3C;
+    --bg:         #181831;
+    --bg-2:       #1D1D3B;
+    --surface:    #23234A;
+    --surface-2:  #2B2B58;
+    --hairline:   #33335C;
+    --text:       #F1EFFA;
+    --text-soft:  #B9B3D4;
+    --text-faint: #9C96BA;
+    --violet:     #9B7CFF;
+    --success:    #3DDC84;
+    --success-soft:#0C2E1C;
+    --warning:    #FFC24D;
+    --warning-soft:#3A2A05;
+    --danger:     #FF6B85;
+    --danger-soft:#3D0F1B;
+
+    /* Outlines invert. On a dark ground a near-black stroke is invisible
+       (measured: 1.36:1 against the card surface), so the line goes light
+       and the card reads as cut out of the dark rather than drawn on it. */
+    --stroke:     #EAE6F8;
+    /* The hard shadow follows it, one step dimmer, so the outline stays the
+       crisper of the two and the shadow reads as an echo rather than a
+       second border. */
+    --sh-color:   #A9A3C8;
+
+    /* A blurred dark shadow does nothing on a dark ground — deepen it so
+       floating overlays still detach from the page. */
+    --sh-float: 0 18px 50px rgba(0,0,0,.6);
+    --grain: rgba(255,255,255,.035);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -97,7 +261,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   /* Faint paper grain — stops the warm background reading as flat beige */
-  background-image: radial-gradient(rgba(22,22,43,.028) 1px, transparent 1px);
+  background-image: radial-gradient(var(--grain) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 

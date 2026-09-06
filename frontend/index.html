@@ -47,6 +47,32 @@
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "INR" }
     }
     </script>
+    <!--
+      Set the theme before the first paint.
+
+      React mounts a few hundred milliseconds in. Without this, a dark-theme
+      user gets a full-brightness white flash on every single page load —
+      which is exactly the moment a dark theme is supposed to be protecting
+      them from. Inline and synchronous on purpose: a deferred script or a
+      React effect both run too late to prevent it.
+
+      Kept deliberately tiny and duplicated from ThemeContext.jsx rather than
+      imported, because importing it would defeat the point.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('gameon_theme');
+          if (saved === 'light' || saved === 'dark') {
+            document.documentElement.setAttribute('data-theme', saved);
+          }
+          var dark = saved === 'dark' || (saved !== 'light'
+            && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', dark ? '#181831' : '#FBF9F4');
+        } catch (e) { /* storage blocked - fall through to the system theme */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

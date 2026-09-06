@@ -13,6 +13,27 @@ import {
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
+/**
+ * One accent per sport.
+ *
+ * Every pill used to hover to the same lime while five other brand colours sat
+ * unused in the hero. Giving each its own turns a uniform row into something
+ * that rewards a cursor, and costs one CSS variable.
+ *
+ * `ink` is the label colour on that fill — the two light accents need dark
+ * text, the saturated ones need white.
+ */
+const SPORT_ACCENT = {
+  football:   { bg: 'var(--volt)',    ink: 'var(--ink)' },
+  cricket:    { bg: 'var(--orange)',  ink: 'var(--ink)' },
+  badminton:  { bg: 'var(--sky)',     ink: 'var(--ink)' },
+  // Ink, not white: white on magenta is 3.36:1, which is fine for a display
+  // headline but under AA for a 14px pill label.
+  basketball: { bg: 'var(--magenta)', ink: 'var(--ink)' },
+  tennis:     { bg: 'var(--volt-2)',  ink: 'var(--ink)' },
+  volleyball: { bg: 'var(--violet)',  ink: '#fff' },
+};
+
 // Features, not figures. "15,000+ turfs" was in here too — a number the
 // platform cannot stand behind does not belong in the furniture.
 const MARQUEE = [
@@ -95,6 +116,9 @@ export default function Home() {
     <div>
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="hero">
+        {/* Centre circle and halfway line — see .hero-pitch in app.css. */}
+        <div className="hero-pitch" aria-hidden="true" />
+
         <div className="hero-deco" aria-hidden="true">
           <span className="hero-blob">⚽</span>
           <span className="hero-blob">🏏</span>
@@ -104,9 +128,15 @@ export default function Home() {
         <div className="container hero-inner">
           <span className="hero-eyebrow">Find. Book. Play.</span>
 
+          {/*
+            `.marker` draws a highlighter stroke behind the words on load —
+            it was defined in app.css, specialised for this headline
+            (`.hero-title .marker::before` sets it magenta), and never used.
+            The markup said `.hero-accent`, which only recolours the text.
+          */}
           <h1 className="hero-title">
             Your next game is<br />
-            <span className="hero-accent">two taps away</span>
+            <span className="marker">two taps away</span>
           </h1>
 
           <p className="hero-sub">
@@ -135,7 +165,15 @@ export default function Home() {
 
           <div className="hero-sports">
             {SPORTS.map((s) => (
-              <Link key={s} to={`/venues?sport=${s}`} className="hero-sport">
+              <Link
+                key={s}
+                to={`/venues?sport=${s}`}
+                className="hero-sport"
+                style={{
+                  '--sport-accent': SPORT_ACCENT[s]?.bg,
+                  '--sport-ink': SPORT_ACCENT[s]?.ink,
+                }}
+              >
                 <span className="hero-sport-icon">{SPORT_ICONS[s]}</span>
                 {SPORT_LABELS[s]}
               </Link>
