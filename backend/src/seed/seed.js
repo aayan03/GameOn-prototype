@@ -81,12 +81,16 @@ export async function seedDatabase({
   let reviewCount = 0;
 
   if (!lucknowOnly) {
+    // Resolved here, so a missing SEED_PASSWORD fails the SEED and not the boot.
+    const password = demoPassword();
+
     console.log('👤 Creating users…');
-    ownerDocs = await User.create(owners.map((o) => ({ ...o, isVerified: true })));
+    ownerDocs = await User.create(owners.map((o) => ({ ...o, password, isVerified: true })));
     playerDocs = await User.create(players.map((p) => {
       const lifetime = p.lifetimePoints ?? LOYALTY.SIGNUP_BONUS;
       return {
         ...p,
+        password,
         loyaltyPoints: p.loyaltyPoints ?? lifetime,
         lifetimePoints: lifetime,
         loyaltyTier: tierFor(lifetime).key,
@@ -165,11 +169,15 @@ async function run() {
     console.log('       confirm details with each venue before going live.');
   }
 
+  // Safe to resolve again here: seeding has already succeeded by this point,
+  // so it cannot throw without having thrown earlier.
+  const password = demoPassword();
+
   console.log('\n   Demo logins');
   console.log('   ─────────────────────────────────────────────');
-  console.log(`   Player (Elite tier)  aayan@gameon.app      / ${demoPassword}`);
-  console.log(`   Player (Legend tier) vaishnavi@gameon.app  / ${demoPassword}`);
-  console.log(`   Venue owner          shivanshu@gameon.app  / ${demoPassword}
+  console.log(`   Player (Elite tier)  aayan@gameon.app      / ${password}`);
+  console.log(`   Player (Legend tier) vaishnavi@gameon.app  / ${password}`);
+  console.log(`   Venue owner          shivanshu@gameon.app  / ${password}
 `);
 
   await disconnectDB();

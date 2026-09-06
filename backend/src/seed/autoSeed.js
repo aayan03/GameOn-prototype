@@ -49,12 +49,16 @@ export default async function autoSeed({
   if (process.env.NODE_ENV === 'production') return false;
   if (await User.exists({})) return false;
 
-  const ownerDocs = await User.create(owners.map((o) => ({ ...o, isVerified: true })));
+  // Resolved here, not at import — see the note on demoPassword().
+  const password = demoPassword();
+
+  const ownerDocs = await User.create(owners.map((o) => ({ ...o, password, isVerified: true })));
 
   const playerDocs = await User.create(players.map((p) => {
     const lifetime = p.lifetimePoints ?? LOYALTY.SIGNUP_BONUS;
     return {
       ...p,
+      password,
       loyaltyPoints: p.loyaltyPoints ?? lifetime,
       lifetimePoints: lifetime,
       loyaltyTier: tierFor(lifetime).key,
@@ -90,6 +94,6 @@ export default async function autoSeed({
   if (lucknowCount) {
     console.log('   ⚠️  Lucknow entries are UNVERIFIED listings for real businesses — invented prices and hours. Read src/seed/lucknow.js.');
   }
-  console.log(`   Demo login → aayan@gameon.app / ${demoPassword}`);
+  console.log(`   Demo login → aayan@gameon.app / ${password}`);
   return true;
 }
