@@ -37,6 +37,7 @@ export default function Navbar() {
         <nav className="nav-links" aria-label="Main">
           <NavLink to="/venues" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Find venues</NavLink>
           <NavLink to="/map" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Map</NavLink>
+          <NavLink to="/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Events</NavLink>
           <NavLink to="/teamup" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>TeamUp</NavLink>
           {isAuthenticated && (
             <NavLink to="/teams" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Teams</NavLink>
@@ -45,6 +46,7 @@ export default function Navbar() {
             <>
               <NavLink to="/owner" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>My venues</NavLink>
               <NavLink to="/owner/requests" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Requests</NavLink>
+              <NavLink to="/owner/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Events</NavLink>
             </>
           )}
           {isAdmin && (

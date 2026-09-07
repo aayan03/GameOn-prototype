@@ -4,6 +4,7 @@ const LINKS = {
   Play: [
     { to: '/venues', label: 'Find venues' },
     { to: '/map', label: 'Explore the map' },
+    { to: '/events', label: 'Sports events' },
     { to: '/teamup', label: 'TeamUp' },
     { to: '/bookings', label: 'My bookings' },
   ],

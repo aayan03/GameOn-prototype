@@ -28,6 +28,27 @@ export const authApi = {
   resetPassword: (payload) => api.post('/auth/reset-password', payload, { auth: false }),
 };
 
+/**
+ * Sports events — marathons, tournaments, morning parties. Separate from
+ * venues and bookings because an event is a gathering with a capacity, not a
+ * court for an hour.
+ */
+export const eventApi = {
+  list:       (filters) => api.get('/events', filters),
+  get:        (idOrSlug) => api.get(`/events/${idOrSlug}`),
+  cities:     () => api.get('/events/meta/cities'),
+  register:   (id, payload) => api.post(`/events/${id}/register`, payload || {}),
+  unregister: (id) => api.del(`/events/${id}/register`),
+  // Organiser
+  create:     (payload) => api.post('/events', payload),
+  update:     (id, payload) => api.patch(`/events/${id}`, payload),
+  cancel:     (id, reason) => api.del(`/events/${id}`, { body: { reason } }),
+  attendees:  (id) => api.get(`/events/${id}/attendees`),
+  // Admin
+  queue:      () => api.get('/events/admin/queue'),
+  moderate:   (id, payload) => api.patch(`/events/${id}/moderate`, payload),
+};
+
 export const venueApi = {
   list:      (filters) => api.get('/venues', filters),
   map:       (filters) => api.get('/venues/map', filters),

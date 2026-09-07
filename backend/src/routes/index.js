@@ -10,8 +10,9 @@ import adminRoutes from './admin.routes.js';
 import paymentRoutes from './payment.routes.js';
 import notificationRoutes from './notification.routes.js';
 import reviewRoutes from './review.routes.js';
+import eventRoutes from './event.routes.js';
 import cronRoutes from './cron.routes.js';
-import { SPORTS, AMENITIES, BOOKING_MODES, SKILL_LEVELS, LOYALTY_TIERS } from '../config/constants.js';
+import { SPORTS, AMENITIES, BOOKING_MODES, SKILL_LEVELS, LOYALTY_TIERS, EVENT_TYPES } from '../config/constants.js';
 import { ok } from '../utils/response.js';
 
 const router = Router();
@@ -50,6 +51,7 @@ router.get('/config', (req, res) => ok(res, {
   amenities: AMENITIES,
   bookingModes: BOOKING_MODES,
   skillLevels: SKILL_LEVELS,
+  eventTypes: EVENT_TYPES,
   loyaltyTiers: LOYALTY_TIERS,
   phases: {
     1: { name: 'Foundation, auth & discovery', status: 'live' },
@@ -71,6 +73,7 @@ router.use('/admin', adminRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/reviews', reviewRoutes);
+router.use('/events', eventRoutes);
 router.use('/cron', cronRoutes);
 
 export default router;

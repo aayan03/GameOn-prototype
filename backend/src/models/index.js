@@ -11,3 +11,5 @@ export { default as Notification } from './Notification.js';
 export { default as RevokedToken } from './RevokedToken.js';
 export { default as PromoRedemption } from './PromoRedemption.js';
 export { default as PendingRegistration } from './PendingRegistration.js';
+export { default as Event } from './Event.js';
+export { default as EventRegistration } from './EventRegistration.js';

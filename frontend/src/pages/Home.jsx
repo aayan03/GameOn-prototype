@@ -11,7 +11,10 @@ import {
   IconChevron, IconArrowRight, IconSparkle,
 } from '../components/Icons.jsx';
 
-const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
+// All eight the platform supports. This list used to stop at six, so
+// pickleball and table tennis were bookable but undiscoverable from the
+// home page — the only place a first-time visitor looks.
+const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball', 'pickleball', 'tabletennis'];
 
 /**
  * One accent per sport.
@@ -32,7 +35,32 @@ const SPORT_ACCENT = {
   basketball: { bg: 'var(--magenta)', ink: 'var(--ink)' },
   tennis:     { bg: 'var(--volt-2)',  ink: 'var(--ink)' },
   volleyball: { bg: 'var(--violet)',  ink: '#fff' },
+  pickleball: { bg: 'var(--success)', ink: '#fff' },
+  tabletennis:{ bg: 'var(--sky)',     ink: 'var(--ink)' },
 };
+
+/**
+ * The stickers floating behind the hero copy.
+ *
+ * There were three, hardcoded into `nth-child` rules across three media
+ * queries — so the hero advertised three of the eight sports on the platform,
+ * and adding one meant editing CSS in three places.
+ *
+ * Positions are hand-placed rather than generated: they have to thread
+ * between the headline, the search bar and the stat row, and no formula does
+ * that as well as looking at it. `compact` marks the ones that survive below
+ * 1080px, where there is only room for a few.
+ */
+const HERO_BLOBS = [
+  { sport: 'football',   top: '8%',  right: '6%',  tilt: '-10deg', bg: 'var(--surface)', dur: '6s',   delay: '0s',   compact: true },
+  { sport: 'basketball', top: '30%', right: '17%', tilt: '7deg',   bg: 'var(--orange)',  dur: '7.2s', delay: '.5s',  compact: true },
+  { sport: 'cricket',    top: '52%', right: '4%',  tilt: '-6deg',  bg: 'var(--volt)',    dur: '6.6s', delay: '1.1s', compact: true },
+  { sport: 'badminton',  top: '80%', right: '13%', tilt: '11deg',  bg: 'var(--magenta)', dur: '7.8s', delay: '.3s' },
+  { sport: 'tennis',     top: '18%', right: '28%', tilt: '5deg',   bg: 'var(--sky)',     dur: '6.9s', delay: '1.6s' },
+  { sport: 'pickleball', top: '86%', right: '9%',  tilt: '-13deg', bg: 'var(--success)', dur: '7.4s', delay: '.9s' },
+  { sport: 'volleyball', top: '44%', right: '33%', tilt: '-4deg',  bg: 'var(--violet)',  dur: '6.3s', delay: '2s' },
+  { sport: 'tabletennis',top: '24%', right: '36%', tilt: '9deg',   bg: 'var(--surface)', dur: '7.6s', delay: '1.3s' },
+];
 
 // Features, not figures. "15,000+ turfs" was in here too — a number the
 // platform cannot stand behind does not belong in the furniture.
@@ -120,9 +148,23 @@ export default function Home() {
         <div className="hero-pitch" aria-hidden="true" />
 
         <div className="hero-deco" aria-hidden="true">
-          <span className="hero-blob">⚽</span>
-          <span className="hero-blob">🏏</span>
-          <span className="hero-blob">🏸</span>
+          {HERO_BLOBS.map((b) => (
+            <span
+              key={b.sport}
+              className="hero-blob"
+              data-compact={b.compact ? '' : undefined}
+              style={{
+                '--blob-top': b.top,
+                '--blob-right': b.right,
+                '--blob-tilt': b.tilt,
+                '--blob-bg': b.bg,
+                '--blob-dur': b.dur,
+                '--blob-delay': b.delay,
+              }}
+            >
+              {SPORT_ICONS[b.sport]}
+            </span>
+          ))}
         </div>
 
         <div className="container hero-inner">

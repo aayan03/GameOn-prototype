@@ -46,6 +46,10 @@ const Notifications  = lazy(() => import('./pages/Notifications.jsx'));
 const NotFound       = lazy(() => import('./pages/NotFound.jsx'));
 // The other end of the signup link — this is where the account is created.
 const VerifyEmail    = lazy(() => import('./pages/VerifyEmail.jsx'));
+// Sports events — marathons, tournaments, morning parties.
+const Events         = lazy(() => import('./pages/Events.jsx'));
+const EventDetail    = lazy(() => import('./pages/EventDetail.jsx'));
+const OwnerEvents    = lazy(() => import('./pages/OwnerEvents.jsx'));
 
 /**
  * Terms, Privacy, Refunds and Contact.
@@ -121,9 +125,14 @@ export default function App() {
                     <Route path="/owner/customers" element={<ProtectedRoute roles={OWNER}><OwnerCustomers /></ProtectedRoute>} />
                     <Route path="/owner/payouts" element={<ProtectedRoute roles={OWNER}><OwnerPayouts /></ProtectedRoute>} />
                     <Route path="/owner/venues/new" element={<ProtectedRoute roles={OWNER}><OwnerVenueNew /></ProtectedRoute>} />
+                    <Route path="/owner/events" element={<ProtectedRoute roles={OWNER}><OwnerEvents /></ProtectedRoute>} />
 
                     {/* Admin — the role is only assignable directly in the database */}
                     <Route path="/admin" element={<ProtectedRoute roles={['admin']}><Admin /></ProtectedRoute>} />
+
+                    {/* Events are browsable without an account, like venues. */}
+                    <Route path="/events" element={<Events />} />
+                    <Route path="/events/:idOrSlug" element={<EventDetail />} />
 
                     <Route path="/verify-email" element={<VerifyEmail />} />
 

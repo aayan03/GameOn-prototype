@@ -32,6 +32,29 @@ export const BOOKING_STATUS = {
   EXPIRED: 'expired',
 };
 
+/**
+ * Sports events — the things that happen AT venues rather than bookings OF
+ * them.
+ *
+ * Deliberately a separate concept from a Booking. A marathon has a start line,
+ * not a court; a morning party has a playlist and a sunrise. They share a city
+ * and a date with a slot booking and almost nothing else, so modelling them as
+ * an unusual kind of booking would have meant `court`, `startMinutes` and the
+ * whole double-booking index carrying nulls for half the collection.
+ */
+export const EVENT_TYPES = [
+  { key: 'marathon',   label: 'Marathon & runs',   icon: '🏃' },
+  { key: 'tournament', label: 'Tournament',        icon: '🏆' },
+  { key: 'party',      label: 'Morning party',     icon: '🌅' },
+  { key: 'meetup',     label: 'Meetup',            icon: '🤝' },
+  { key: 'workshop',   label: 'Coaching & clinic', icon: '🎯' },
+  { key: 'league',     label: 'League',            icon: '📅' },
+  { key: 'fitness',    label: 'Fitness session',   icon: '💪' },
+  { key: 'other',      label: 'Other',             icon: '✨' },
+];
+
+export const EVENT_TYPE_KEYS = EVENT_TYPES.map((e) => e.key);
+
 export const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced', 'pro'];
 
 /**
