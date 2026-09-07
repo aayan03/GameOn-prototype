@@ -10,8 +10,9 @@
  */
 import mongoose from 'mongoose';
 import { connectDB, disconnectDB, isMemoryDB } from '../config/db.js';
-import { User, Venue, Review, Booking, TeamUpPost, Team, Transaction } from '../models/index.js';
+import { User, Venue, Review, Booking, TeamUpPost, Team, Transaction, Parlor } from '../models/index.js';
 import { owners, players, venues, demoPassword } from './data.js';
+import parlorSeed from './parlors.js';
 import { lucknowVenues, lucknowOwner } from './lucknow.js';
 import { LOYALTY } from '../config/constants.js';
 import { tierFor } from '../services/loyalty.service.js';
@@ -40,6 +41,27 @@ async function insertVenue(v, ownerId) {
     moderationStatus: 'approved',
     isActive: true,
   });
+}
+
+/**
+ * Game parlours. Invented listings — see the note at the top of
+ * seed/parlors.js — so a fresh locator has something in it. A list feature
+ * with an empty list reads as broken rather than as new.
+ */
+async function insertParlors(ownerId) {
+  const rows = parlorSeed.map((p) => {
+    const { lat, lng, ...rest } = p;
+    return {
+      ...rest,
+      addedBy: ownerId,
+      location: { type: 'Point', coordinates: [lng, lat] },
+      isClaimed: true,
+      moderationStatus: 'approved',
+      isActive: true,
+    };
+  });
+  await Parlor.insertMany(rows);
+  return rows.length;
 }
 
 /**
@@ -72,7 +94,7 @@ export async function seedDatabase({
   await Promise.all([
     User.deleteMany({}), Venue.deleteMany({}), Review.deleteMany({}),
     Booking.deleteMany({}), TeamUpPost.deleteMany({}), Team.deleteMany({}),
-    Transaction.deleteMany({}),
+    Transaction.deleteMany({}), Parlor.deleteMany({}),
   ]);
 
   let ownerDocs = [];
@@ -117,6 +139,9 @@ export async function seedDatabase({
     }
   }
 
+  console.log('🎱 Creating game parlours…');
+  const parlorCount = await insertParlors(ownerDocs[0]._id);
+
   let lucknowCount = 0;
   if (!noLucknow) {
     console.log('📍 Creating real Lucknow listings…');
@@ -133,6 +158,7 @@ export async function seedDatabase({
     demoVenues: demoCount,
     reviews: reviewCount,
     lucknowVenues: lucknowCount,
+    parlors: parlorCount,
   };
 
   console.log('\n✅ Seed complete');

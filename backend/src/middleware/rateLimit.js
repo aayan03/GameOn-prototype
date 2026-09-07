@@ -102,6 +102,19 @@ export const writeLimiter = makeLimiter({
   message: message('You are doing that too quickly. Wait a moment and try again.'),
 });
 
+/**
+ * Search runs as you type, so it needs a ceiling of its own: on the global
+ * budget alone a couple of minutes of typing would lock a user out of the
+ * rest of the API. Per-minute and generous — a debounced box sends a handful
+ * of requests per search, and anything sending sixty is not typing.
+ */
+export const searchLimiter = makeLimiter({
+  ...base,
+  windowMs: 60 * 1000,
+  max: 60,
+  message: message('Too many searches. Give it a second.'),
+});
+
 /** Content creation (TeamUp posts, teams) — spam control. */
 export const createLimiter = makeLimiter({
   ...base,

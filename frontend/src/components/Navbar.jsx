@@ -5,12 +5,14 @@ import { initials, rupees } from '../utils/format.js';
 import TierBadge from './TierBadge.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
-import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle } from './Icons.jsx';
+import CommandPalette from './CommandPalette.jsx';
+import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle, IconSearch } from './Icons.jsx';
 
 export default function Navbar() {
   const { user, isAuthenticated, isOwner, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [open, setOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const menuRef = useRef(null);
   const navigate = useNavigate();
 
@@ -24,6 +26,31 @@ export default function Navbar() {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
 
+  /**
+   * The site-wide shortcut. Ctrl/Cmd-K is what people already press, and a
+   * bare "/" is the other one — but only when they are not typing into
+   * something, or every search box on the site would swallow its own slashes.
+   */
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = e.key?.toLowerCase();
+      if (k === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      const typing = el?.isContentEditable
+        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el?.tagName);
+      if (typing) return;
+      e.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const handleLogout = () => { logout(); setOpen(false); navigate('/'); };
 
   return (
@@ -31,7 +58,7 @@ export default function Navbar() {
       <div className="container nav-inner">
         <Link to="/" className="logo" aria-label="GameOn home">
           <span className="logo-mark">GO</span>
-          GameOn
+          <span className="logo-word">GameOn</span>
         </Link>
 
         <nav className="nav-links" aria-label="Main">
@@ -66,6 +93,20 @@ export default function Navbar() {
         </nav>
 
         <div className="nav-right">
+          {/*
+            Under 900px the whole link bar is hidden, so on a phone this is
+            the only way to reach a page that is not one of the five tabs.
+            It stays visible at every width for that reason.
+          */}
+          <button
+            className="nav-search"
+            onClick={() => setSearchOpen(true)}
+            aria-label="Search GameOn"
+          >
+            <IconSearch style={{ width: 17, height: 17 }} />
+            <span className="nav-search-text">Search</span>
+            <kbd className="nav-search-kbd" aria-hidden="true">/</kbd>
+          </button>
           {/* Before the bell, so it does not move when a notification badge
               appears and changes the bell's width. */}
           <ThemeToggle />
@@ -123,6 +164,8 @@ export default function Navbar() {
           )}
         </div>
       </div>
+
+      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </header>
   );
 }

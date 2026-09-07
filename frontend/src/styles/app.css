@@ -1319,14 +1319,23 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 
 /* ═══════════════════════════════════════════════════════════════
    16. SMALL PHONES (≤420px)
-   The nav has a logo plus two buttons; below this width the default
-   gaps stop fitting, so everything tightens up a notch.
+   The nav carries a logo, a search button, a theme toggle and two
+   auth buttons; below this width the default gaps stop fitting, so
+   everything tightens up a notch.
    ═══════════════════════════════════════════════════════════════ */
 @media (max-width: 420px) {
   .container { padding: 0 16px; }
   .nav-inner { gap: 12px; }
   .logo { font-size: 1.14rem; gap: 8px; }
   .logo-mark { width: 34px; height: 34px; font-size: .78rem; }
+  /*
+    The mark alone at 375px. Tightening gaps got the bar back inside the
+    viewport by about seven pixels, which is not a fix — one longer word or
+    a larger system font and the whole page scrolls sideways again. Dropping
+    the wordmark buys sixty. The mark is still the link home, and the
+    anchor's aria-label still reads "GameOn home".
+  */
+  .logo-word { display: none; }
   .nav-right { gap: 8px; }
   .btn-sm { padding: 8px 13px; font-size: .82rem; }
   .card-pad { padding: 20px; }
@@ -2236,4 +2245,151 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 .parlor-map {
   border: var(--bw) solid var(--stroke); border-radius: var(--r-xl);
   overflow: hidden; box-shadow: var(--sh-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GLOBAL SEARCH — one box for every page and every listing
+   ═══════════════════════════════════════════════════════════════ */
+
+.nav-search {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 10px 0 12px; border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text-soft);
+  border: var(--bw-thin) solid var(--stroke);
+  font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .9rem;
+  transition: transform .16s var(--snap), box-shadow .16s var(--snap), color .16s;
+}
+.nav-search:hover {
+  color: var(--text); transform: translate(-1px, -1px); box-shadow: var(--sh-xs);
+}
+.nav-search-text { white-space: nowrap; }
+.nav-search-kbd {
+  display: grid; place-items: center; min-width: 20px; height: 20px;
+  padding: 0 5px; border-radius: 5px;
+  background: var(--surface); color: var(--text-faint);
+  border: var(--bw-thin) solid var(--hairline);
+  font-family: inherit; font-size: .74rem; font-weight: 700;
+}
+
+/* Below the link bar's breakpoint the label and hint are dead weight — the
+   icon alone is understood, and space is scarce. */
+@media (max-width: 900px) {
+  .nav-search { padding: 0; width: 38px; justify-content: center; }
+  .nav-search-text, .nav-search-kbd { display: none; }
+}
+
+/* ── The dialog ─────────────────────────────────────────────── */
+
+.palette-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; justify-content: center;
+  padding: clamp(16px, 10vh, 110px) 16px 16px;
+  background: rgba(5, 5, 12, .5);
+  backdrop-filter: blur(3px);
+  animation: paletteFade .14s ease-out;
+}
+@keyframes paletteFade { from { opacity: 0; } to { opacity: 1; } }
+
+.palette {
+  display: flex; flex-direction: column;
+  width: min(620px, 100%); max-height: min(560px, 78vh);
+  background: var(--surface); color: var(--text);
+  border: var(--bw-fat) solid var(--stroke); border-radius: var(--r-xl);
+  box-shadow: var(--sh-lg); overflow: hidden;
+  animation: paletteIn .18s var(--spring);
+}
+@keyframes paletteIn {
+  from { opacity: 0; transform: translateY(-10px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.palette-input {
+  display: flex; align-items: center; gap: 11px; flex-shrink: 0;
+  padding: 14px 14px 14px 18px;
+  border-bottom: var(--bw-thin) solid var(--hairline);
+}
+.palette-input input {
+  flex: 1; min-width: 0; border: 0; outline: none; background: none;
+  color: var(--text); font-size: 1.02rem; font-weight: 500;
+}
+.palette-input input::placeholder { color: var(--text-faint); }
+.palette-x {
+  width: 30px; height: 30px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-soft);
+  border: var(--bw-thin) solid var(--hairline);
+}
+.palette-x:hover { color: var(--text); }
+
+.palette-list { overflow-y: auto; padding: 8px; flex: 1; }
+.palette-group + .palette-group { margin-top: 6px; }
+.palette-group-label {
+  padding: 8px 10px 5px;
+  font-family: 'Outfit', sans-serif; font-size: .7rem; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+
+.palette-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  background: none; border: 0; color: var(--text); text-align: left;
+}
+/* One highlight class for both hover and the keyboard cursor, because they
+   are the same thing: what Enter would open.
+
+   The tint alone was not enough. Measured against the panel behind it the
+   fill is 1.06:1 in light and 1.22:1 in dark — the two colours differ in hue
+   rather than in lightness, so on a dim screen the selected row all but
+   disappears, and this highlight is the ONLY thing telling a keyboard user
+   what Enter is about to open. The inset ring adds an edge that survives in
+   both themes, and being inset it costs no layout shift. */
+.palette-row.active {
+  background: var(--volt-soft);
+  box-shadow: inset 0 0 0 var(--bw-thin) var(--stroke);
+}
+.palette-row.active .palette-row-icon { background: var(--volt); color: var(--ink); }
+
+.palette-row-icon {
+  width: 30px; height: 30px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-soft);
+  border: var(--bw-thin) solid var(--hairline);
+  transition: background .14s, color .14s;
+}
+.palette-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.palette-row-text strong {
+  font-size: .96rem; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.palette-row-sub {
+  font-size: .82rem; color: var(--text-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.palette-row-meta {
+  flex-shrink: 0; font-size: .82rem; font-weight: 700; color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.palette-empty { padding: 34px 20px; text-align: center; color: var(--text-soft); }
+
+.palette-foot {
+  display: flex; gap: 16px; flex-shrink: 0;
+  padding: 10px 18px; border-top: var(--bw-thin) solid var(--hairline);
+  background: var(--surface-2);
+  font-size: .78rem; color: var(--text-faint);
+}
+.palette-foot kbd {
+  display: inline-grid; place-items: center; min-width: 18px; height: 18px;
+  margin-right: 3px; padding: 0 4px; border-radius: 4px;
+  background: var(--surface); color: var(--text-soft);
+  border: var(--bw-thin) solid var(--hairline);
+  font-family: 'Outfit', sans-serif; font-size: .72rem; font-weight: 700;
+}
+@media (max-width: 560px) {
+  .palette-foot { display: none; }
+  .palette { max-height: 84vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette, .palette-backdrop { animation: none; }
 }

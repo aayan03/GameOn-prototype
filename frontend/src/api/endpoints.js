@@ -183,3 +183,11 @@ export const configApi = {
   get: () => api.get('/config', undefined, { auth: false }),
   health: () => api.get('/health', undefined, { auth: false }),
 };
+
+/**
+ * One box, four collections. Public — everything it can return is already
+ * public, and a search that demands a login is a search nobody uses.
+ */
+export const searchApi = {
+  all: (params) => api.get('/search', params, { auth: false }),
+};

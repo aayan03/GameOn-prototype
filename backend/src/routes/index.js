@@ -12,6 +12,7 @@ import notificationRoutes from './notification.routes.js';
 import reviewRoutes from './review.routes.js';
 import eventRoutes from './event.routes.js';
 import parlorRoutes from './parlor.routes.js';
+import searchRoutes from './search.routes.js';
 import cronRoutes from './cron.routes.js';
 import {
   SPORTS, AMENITIES, BOOKING_MODES, SKILL_LEVELS, LOYALTY_TIERS, EVENT_TYPES,
@@ -81,6 +82,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/events', eventRoutes);
 router.use('/parlors', parlorRoutes);
+router.use('/search', searchRoutes);
 router.use('/cron', cronRoutes);
 
 export default router;
