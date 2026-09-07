@@ -2,9 +2,8 @@
  * Populates an empty development database so the app is usable immediately.
  * Never runs against a database that already has users in it.
  */
-import { User, Venue, Review, Parlor } from '../models/index.js';
+import { User, Venue, Review } from '../models/index.js';
 import { owners, players, venues, demoPassword } from './data.js';
-import parlorSeed from './parlors.js';
 import { lucknowVenues, lucknowOwner } from './lucknow.js';
 import { LOYALTY } from '../config/constants.js';
 import { tierFor } from '../services/loyalty.service.js';
@@ -30,27 +29,6 @@ async function insertVenue(v, ownerId) {
     moderationStatus: 'approved',
     isActive: true,
   });
-}
-
-/**
- * Game parlours. Invented listings — see the note at the top of
- * seed/parlors.js — so a fresh locator has something in it. A list feature
- * with an empty list reads as broken rather than as new.
- */
-async function insertParlors(ownerId) {
-  const rows = parlorSeed.map((p) => {
-    const { lat, lng, ...rest } = p;
-    return {
-      ...rest,
-      addedBy: ownerId,
-      location: { type: 'Point', coordinates: [lng, lat] },
-      isClaimed: true,
-      moderationStatus: 'approved',
-      isActive: true,
-    };
-  });
-  await Parlor.insertMany(rows);
-  return rows.length;
 }
 
 /**
@@ -112,10 +90,7 @@ export default async function autoSeed({
     }
   }
 
-  const parlorCount = await insertParlors(ownerDocs[0]._id);
-
-  console.log(`🌱 Auto-seeded ${venues.length} demo venues, ${parlorCount} game parlours`
-    + ` + ${lucknowCount} real Lucknow listings.`);
+  console.log(`🌱 Auto-seeded ${venues.length} demo venues + ${lucknowCount} real Lucknow listings.`);
   if (lucknowCount) {
     console.log('   ⚠️  Lucknow entries are UNVERIFIED listings for real businesses — invented prices and hours. Read src/seed/lucknow.js.');
   }
