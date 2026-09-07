@@ -13,4 +13,3 @@ export { default as PromoRedemption } from './PromoRedemption.js';
 export { default as PendingRegistration } from './PendingRegistration.js';
 export { default as Event } from './Event.js';
 export { default as EventRegistration } from './EventRegistration.js';
-export { default as Parlor } from './Parlor.js';

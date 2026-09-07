@@ -38,7 +38,6 @@ export default function Navbar() {
           <NavLink to="/venues" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Find venues</NavLink>
           <NavLink to="/map" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Map</NavLink>
           <NavLink to="/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Events</NavLink>
-          <NavLink to="/parlors" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Parlours</NavLink>
           <NavLink to="/teamup" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>TeamUp</NavLink>
           {isAuthenticated && (
             <NavLink to="/teams" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Teams</NavLink>

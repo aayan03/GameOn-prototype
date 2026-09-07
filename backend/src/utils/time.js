@@ -221,60 +221,6 @@ export function minutesNow() {
 }
 
 /**
- * Is a place with these opening hours open right now?
- *
- * `hours` is the same `[{ day, open, close, isClosed }]` shape venues use.
- * Everything is evaluated on the VENUE's clock, not the server's.
- *
- * The case that makes this more than a comparison is closing after midnight,
- * which game parlours and late-night venues routinely do: `open: '16:00',
- * close: '02:00'` means Tuesday's row is still what governs 1am on Wednesday.
- * A naive `now >= open && now < close` reports those places as closed for
- * their entire business day.
- *
- * Returns `{ open, opensAt, closesAt, today }` — the caller usually wants to
- * say "opens at 4pm" as much as "closed".
- */
-export function openStatus(hours = [], now = new Date()) {
-  const rows = Array.isArray(hours) ? hours : [];
-  if (!rows.length) return { open: false, opensAt: null, closesAt: null, today: null };
-
-  const p = zonedParts(now);
-  const mins = p.hour * 60 + p.minute;
-  const dow = dayOfWeek(localKey(now));
-
-  const rowFor = (d) => rows.find((h) => h.day === d) || null;
-  const today = rowFor(dow);
-
-  // Yesterday's row can still be running if it closes after midnight.
-  const yesterday = rowFor((dow + 6) % 7);
-  if (yesterday && !yesterday.isClosed) {
-    const yOpen = toMinutes(yesterday.open);
-    const yClose = toMinutes(yesterday.close);
-    if (yClose <= yOpen && mins < yClose) {
-      return { open: true, opensAt: null, closesAt: yesterday.close, today: yesterday };
-    }
-  }
-
-  if (!today || today.isClosed) {
-    return { open: false, opensAt: null, closesAt: null, today };
-  }
-
-  const open = toMinutes(today.open);
-  const close = toMinutes(today.close);
-  // A close time at or before the open time means it runs past midnight.
-  const overnight = close <= open;
-  const isOpen = overnight ? mins >= open : (mins >= open && mins < close);
-
-  return {
-    open: isOpen,
-    opensAt: !isOpen && mins < open ? today.open : null,
-    closesAt: isOpen ? today.close : null,
-    today,
-  };
-}
-
-/**
  * Start and end instants of the last `days` calendar days, inclusive of today.
  *
  * Lives here rather than in the analytics service so it uses the same clock as

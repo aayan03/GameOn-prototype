@@ -5,7 +5,6 @@ const LINKS = {
     { to: '/venues', label: 'Find venues' },
     { to: '/map', label: 'Explore the map' },
     { to: '/events', label: 'Sports events' },
-    { to: '/parlors', label: 'Game parlours' },
     { to: '/teamup', label: 'TeamUp' },
     { to: '/bookings', label: 'My bookings' },
   ],

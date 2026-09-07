@@ -73,30 +73,3 @@ export function eventWhen(iso) {
     hour: 'numeric', minute: '2-digit',
   });
 }
-
-/** Game-parlour activities, mirroring PARLOR_GAMES in the backend constants. */
-export const PARLOR_GAME_ICONS = {
-  snooker: '🎱', pool: '🎯', bowling: '🎳', arcade: '🕹️', console: '🎮',
-  vr: '🥽', boardgames: '🎲', carrom: '⚪', darts: '🎯', foosball: '⚽',
-  lasertag: '🔫', karting: '🏎️',
-};
-
-export const PARLOR_GAME_LABELS = {
-  snooker: 'Snooker', pool: 'Pool', bowling: 'Bowling', arcade: 'Arcade',
-  console: 'Console gaming', vr: 'VR', boardgames: 'Board games',
-  carrom: 'Carrom', darts: 'Darts', foosball: 'Foosball',
-  lasertag: 'Laser tag', karting: 'Go-karting',
-};
-
-export const PARLOR_GAMES = Object.keys(PARLOR_GAME_LABELS);
-
-/** "11:00" → "11 AM", "23:30" → "11:30 PM". */
-export function clockLabel(hhmm) {
-  if (!hhmm) return '';
-  const [h, m] = hhmm.split(':').map(Number);
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${suffix}`;
-}
-
-export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

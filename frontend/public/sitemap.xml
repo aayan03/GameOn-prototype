@@ -8,7 +8,6 @@
   <url><loc>__SITE_URL__/venues</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
   <url><loc>__SITE_URL__/map</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>__SITE_URL__/events</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
-  <url><loc>__SITE_URL__/parlors</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>__SITE_URL__/teamup</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
   <url><loc>__SITE_URL__/register</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>__SITE_URL__/login</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>
