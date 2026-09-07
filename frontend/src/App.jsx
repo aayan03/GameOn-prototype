@@ -50,6 +50,9 @@ const VerifyEmail    = lazy(() => import('./pages/VerifyEmail.jsx'));
 const Events         = lazy(() => import('./pages/Events.jsx'));
 const EventDetail    = lazy(() => import('./pages/EventDetail.jsx'));
 const OwnerEvents    = lazy(() => import('./pages/OwnerEvents.jsx'));
+// Game parlours — a locator, not a booking flow.
+const Parlors        = lazy(() => import('./pages/Parlors.jsx'));
+const ParlorDetail   = lazy(() => import('./pages/ParlorDetail.jsx'));
 
 /**
  * Terms, Privacy, Refunds and Contact.
@@ -133,6 +136,11 @@ export default function App() {
                     {/* Events are browsable without an account, like venues. */}
                     <Route path="/events" element={<Events />} />
                     <Route path="/events/:idOrSlug" element={<EventDetail />} />
+
+                    {/* Public by design — a locator nobody can use without an
+                        account is not a locator. */}
+                    <Route path="/parlors" element={<Parlors />} />
+                    <Route path="/parlors/:idOrSlug" element={<ParlorDetail />} />
 
                     <Route path="/verify-email" element={<VerifyEmail />} />
 

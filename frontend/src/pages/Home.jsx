@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { venueApi } from '../api/endpoints.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import HomeDashboard from './HomeDashboard.jsx';
 import useGeolocation from '../hooks/useGeolocation.js';
 import useReveal from '../hooks/useReveal.js';
 import useCountUp from '../hooks/useCountUp.js';
@@ -8,7 +10,7 @@ import VenueCard, { VenueCardSkeleton } from '../components/VenueCard.jsx';
 import { SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
 import {
   IconSearch, IconLocate, IconBolt, IconPhone, IconUsers,
-  IconChevron, IconArrowRight, IconSparkle,
+  IconChevron, IconArrowRight,
 } from '../components/Icons.jsx';
 
 // All eight the platform supports. This list used to stop at six, so
@@ -69,13 +71,6 @@ const MARQUEE = [
   'Find players nearby', 'No phone tag', 'Assisted booking', 'Weekend leagues',
 ];
 
-const STEPS = [
-  { n: 1, title: 'Pick your sport', body: 'Football, cricket, badminton — whatever the squad is playing this week.' },
-  { n: 2, title: 'Find a venue', body: 'See turfs near you on the map, with real prices and real ratings.' },
-  { n: 3, title: 'Choose your slot', body: 'A live grid of open hours. Tap the ones you want, stack them back to back.' },
-  { n: 4, title: 'Pay and play', body: 'Instant confirmation at most venues, assisted confirmation everywhere else.' },
-];
-
 function Stat({ value, suffix, label }) {
   const [n, ref] = useCountUp(value);
   return (
@@ -86,7 +81,20 @@ function Stat({ value, suffix, label }) {
   );
 }
 
-export default function Home() {
+/**
+ * The VISITOR landing page.
+ *
+ * Signed-in users get HomeDashboard instead — see the switch in Home.jsx's
+ * default export below. Splitting them is most of the answer to "the home
+ * page feels cluttered": one page was trying to sell the product AND be a
+ * control panel, so everybody got both and neither was short.
+ *
+ * Trimmed while splitting. "How it works" (4 steps) and "Our edge" (3 cards)
+ * said overlapping things in two different shapes and have been merged into
+ * one three-point section; the loyalty strip and the owner CTA are now a
+ * single closing block instead of two competing dark slabs in a row.
+ */
+function HomeLanding() {
   const [query, setQuery] = useState('');
   const [venues, setVenues] = useState([]);
   const [stats, setStats] = useState(null);
@@ -96,7 +104,6 @@ export default function Home() {
 
   const nearRef = useReveal();
   const edgeRef = useReveal();
-  const stepRef = useReveal();
   const ctaRef  = useReveal();
 
   useEffect(() => {
@@ -297,31 +304,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── How it works ─────────────────────────────────────── */}
-      <section className="container section-sm">
-        <div className="center" style={{ marginBottom: 30 }}>
-          <span className="eyebrow" style={{ justifyContent: 'center' }}>How it works</span>
-          <h2 style={{ marginTop: 10 }}>Kickoff in four taps</h2>
-        </div>
-        <div className="steps" ref={stepRef}>
-          {STEPS.map((s, i) => (
-            <div key={s.n} className="step will-reveal" style={{ '--i': i }}>
-              <span className="step-num">{s.n}</span>
-              <h3 style={{ marginBottom: 7 }}>{s.title}</h3>
-              <p className="text-soft">{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── The hybrid pitch (deck slide 4) ──────────────────── */}
+      {/*
+        ── Why GameOn ─────────────────────────────────────────
+        Was two sections: a four-step "How it works" and a three-card "Our
+        edge". They said overlapping things in two different shapes, one after
+        the other, which is a large part of why this page read as cluttered.
+        One section, three points, each doing a distinct job.
+      */}
       <section className="container section">
         <div className="center" style={{ marginBottom: 30 }}>
-          <span className="eyebrow" style={{ justifyContent: 'center' }}>Our edge</span>
+          <span className="eyebrow" style={{ justifyContent: 'center' }}>Why GameOn</span>
           <h2 style={{ marginTop: 10 }}>Nobody else plays both sides</h2>
-          <p className="text-soft" style={{ marginTop: 10, maxWidth: '56ch', marginInline: 'auto' }}>
-            Automation-only apps abandon offline venues. Call-centre services can't scale.
-            GameOn runs both, so every turf in the city is bookable from day one.
+          <p className="text-soft" style={{ marginTop: 10, maxWidth: '54ch', marginInline: 'auto' }}>
+            Automation-only apps abandon offline venues. Call-centre services can&rsquo;t
+            scale. GameOn runs both, so every turf in the city is bookable from day one.
           </p>
         </div>
 
@@ -333,8 +329,8 @@ export default function Home() {
             </span>
             <h3>Instant booking</h3>
             <p className="text-soft">
-              Digitally-ready venues sync their calendar with us. Pick a slot, pay,
-              and it's confirmed before you close the app.
+              Pick a slot on a live grid, pay, and it&rsquo;s confirmed before you close
+              the app. No phone tag, no waiting to hear back.
             </p>
           </div>
 
@@ -346,7 +342,7 @@ export default function Home() {
             <h3>Assisted booking</h3>
             <p className="text-soft">
               Local turfs that still run on phone calls stay bookable. We route your
-              request and confirm on the owner's behalf — usually within 30 minutes.
+              request and confirm on the owner&rsquo;s behalf, usually within 30 minutes.
             </p>
           </div>
 
@@ -355,60 +351,77 @@ export default function Home() {
             <span className="edge-icon" style={{ background: 'var(--violet)', color: '#fff' }}>
               <IconUsers style={{ width: 26, height: 26 }} />
             </span>
-            <h3>TeamUp</h3>
+            <h3>TeamUp &amp; rewards</h3>
             <p className="text-soft">
-              Four players and need six? Post the game, and nearby players with the
-              right skill level ask to join. Costs split automatically.
+              Short on players? Post the game and nearby players ask to join, with the
+              cost split. Every booking earns points that cut your platform fee.
             </p>
           </div>
         </div>
       </section>
 
-      {/* ── Loyalty teaser ───────────────────────────────────── */}
-      <section className="container section-sm">
-        <div className="loyalty-strip">
-          <div>
-            <span className="eyebrow" style={{ color: 'var(--volt)' }}>Rewards</span>
+      {/*
+        ── One closing block ──────────────────────────────────
+        The loyalty strip and the owner CTA were two dark slabs stacked back to
+        back, each with its own heading and button. Same visual weight, same
+        colour, competing for the same attention. One block, two doors.
+      */}
+      <section className="container" style={{ paddingBottom: 56 }}>
+        <div className="closing-cta will-reveal" ref={ctaRef}>
+          <div className="closing-half">
+            <span className="eyebrow" style={{ color: 'var(--volt)' }}>For players</span>
             <h2 style={{ color: '#fff', marginTop: 10 }}>The more you play, the less you pay</h2>
-            <p style={{ color: 'rgba(255,255,255,.8)', marginTop: 10, maxWidth: '50ch' }}>
-              Every booking earns points. Points cut your platform fee, unlock earlier
-              access to slots, and convert straight into wallet credit.
+            <p style={{ color: 'rgba(255,255,255,.8)', marginTop: 10 }}>
+              Every booking earns points. Points cut your fee and turn into wallet credit.
             </p>
-            <div className="row gap-10 wrap" style={{ marginTop: 20 }}>
-              {[
-                { icon: '🥉', label: 'Rookie' },
-                { icon: '🥈', label: 'Pro' },
-                { icon: '🥇', label: 'Elite' },
-                { icon: '👑', label: 'Legend' },
-              ].map((t) => (
-                <span key={t.label} className="tier-pill">{t.icon} {t.label}</span>
+            <div className="row gap-8 wrap" style={{ marginTop: 16 }}>
+              {[['🥉', 'Rookie'], ['🥈', 'Pro'], ['🥇', 'Elite'], ['👑', 'Legend']].map(([icon, label]) => (
+                <span key={label} className="tier-pill">{icon} {label}</span>
               ))}
             </div>
+            <Link to="/register" className="btn btn-primary" style={{ marginTop: 20 }}>
+              Create an account <IconArrowRight style={{ width: 17, height: 17 }} />
+            </Link>
           </div>
-          <Link to="/loyalty" className="btn btn-primary btn-lg">
-            See the rewards <IconArrowRight style={{ width: 18, height: 18 }} />
-          </Link>
-        </div>
-      </section>
 
-      {/* ── Owner CTA ────────────────────────────────────────── */}
-      <section className="container" style={{ paddingBottom: 56 }}>
-        <div className="owner-cta will-reveal" ref={ctaRef}>
-          <div>
-            <span className="sticker" style={{ background: 'var(--volt)', color: 'var(--ink)', marginBottom: 14 }}>
-              <span className="row gap-6"><IconSparkle style={{ width: 13, height: 13 }} /> Free to list</span>
-            </span>
-            <h2 style={{ color: '#fff', marginTop: 6 }}>Run a turf or court?</h2>
-            <p style={{ color: 'rgba(255,255,255,.82)', marginTop: 10, maxWidth: '48ch' }}>
-              List your venue free. Take instant bookings if you're set up for it, or let
-              our team handle confirmations while you keep working the way you always have.
+          <div className="closing-divider" aria-hidden="true" />
+
+          <div className="closing-half">
+            <span className="eyebrow" style={{ color: 'var(--volt)' }}>For venues</span>
+            <h2 style={{ color: '#fff', marginTop: 10 }}>Run a turf or court?</h2>
+            <p style={{ color: 'rgba(255,255,255,.8)', marginTop: 10 }}>
+              List it free. Take instant bookings, or let our team handle confirmations
+              while you keep working the way you always have.
             </p>
+            <Link to="/register?role=owner" className="btn btn-onlight" style={{ marginTop: 20 }}>
+              List your venue <IconArrowRight style={{ width: 17, height: 17 }} />
+            </Link>
           </div>
-          <Link to="/register?role=owner" className="btn btn-primary btn-lg">
-            List your venue <IconArrowRight style={{ width: 18, height: 18 }} />
-          </Link>
         </div>
       </section>
     </div>
   );
+}
+
+/**
+ * The home page picks its audience.
+ *
+ * A signed-in player wants their next booking and a way to the next one; a
+ * visitor wants to know what this is. One page doing both is how it ended up
+ * seven sections long.
+ */
+export default function Home() {
+  const { isAuthenticated, loading } = useAuth();
+
+  // Render nothing rather than flashing the marketing page at somebody who is
+  // about to be shown their dashboard.
+  if (loading) {
+    return (
+      <div className="container section center" style={{ paddingTop: 80 }}>
+        <div className="spinner" style={{ margin: '0 auto' }} />
+      </div>
+    );
+  }
+
+  return isAuthenticated ? <HomeDashboard /> : <HomeLanding />;
 }

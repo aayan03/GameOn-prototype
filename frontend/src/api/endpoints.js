@@ -49,6 +49,24 @@ export const eventApi = {
   moderate:   (id, payload) => api.patch(`/events/${id}/moderate`, payload),
 };
 
+/**
+ * Game parlours — snooker halls, arcades, bowling alleys.
+ *
+ * A LOCATOR. There is deliberately no `book` here: a parlour is a directory
+ * entry, not inventory. The call to action is a phone number and directions.
+ */
+export const parlorApi = {
+  list:     (filters) => api.get('/parlors', filters),
+  map:      (filters) => api.get('/parlors/map', filters),
+  get:      (idOrSlug) => api.get(`/parlors/${idOrSlug}`),
+  cities:   () => api.get('/parlors/meta/cities'),
+  mine:     () => api.get('/parlors/mine/list'),
+  create:   (payload) => api.post('/parlors', payload),
+  update:   (id, payload) => api.patch(`/parlors/${id}`, payload),
+  remove:   (id) => api.del(`/parlors/${id}`),
+  moderate: (id, payload) => api.patch(`/parlors/${id}/moderate`, payload),
+};
+
 export const venueApi = {
   list:      (filters) => api.get('/venues', filters),
   map:       (filters) => api.get('/venues/map', filters),

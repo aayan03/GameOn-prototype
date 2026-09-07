@@ -55,6 +55,34 @@ export const EVENT_TYPES = [
 
 export const EVENT_TYPE_KEYS = EVENT_TYPES.map((e) => e.key);
 
+/**
+ * Game parlours — snooker halls, arcades, bowling alleys, gaming cafés.
+ *
+ * A directory, not an inventory. Nothing here is bookable, so these are the
+ * things you can PLAY at a place rather than things you can reserve.
+ */
+export const PARLOR_GAMES = [
+  { key: 'snooker',    label: 'Snooker',       icon: '🎱' },
+  { key: 'pool',       label: 'Pool',          icon: '🎯' },
+  { key: 'bowling',    label: 'Bowling',       icon: '🎳' },
+  { key: 'arcade',     label: 'Arcade',        icon: '🕹️' },
+  { key: 'console',    label: 'Console gaming', icon: '🎮' },
+  { key: 'vr',         label: 'VR',            icon: '🥽' },
+  { key: 'boardgames', label: 'Board games',   icon: '🎲' },
+  { key: 'carrom',     label: 'Carrom',        icon: '⚪' },
+  { key: 'darts',      label: 'Darts',         icon: '🎯' },
+  { key: 'foosball',   label: 'Foosball',      icon: '⚽' },
+  { key: 'lasertag',   label: 'Laser tag',     icon: '🔫' },
+  { key: 'karting',    label: 'Go-karting',    icon: '🏎️' },
+];
+
+export const PARLOR_GAME_KEYS = PARLOR_GAMES.map((g) => g.key);
+
+export const PARLOR_AMENITIES = [
+  'parking', 'ac', 'cafe', 'washroom', 'card_payment', 'wheelchair_access',
+  'group_bookings', 'wifi', 'lockers', 'seating',
+];
+
 export const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced', 'pro'];
 
 /**
