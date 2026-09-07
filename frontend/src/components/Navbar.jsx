@@ -44,13 +44,23 @@ export default function Navbar() {
           )}
           {isOwner && (
             <>
+              <span className="nav-group-divider" aria-hidden="true" />
               <NavLink to="/owner" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>My venues</NavLink>
               <NavLink to="/owner/requests" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Requests</NavLink>
-              <NavLink to="/owner/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Events</NavLink>
+              {/*
+                "My events", not "Events" — an owner otherwise saw the word
+                twice in one bar, once meaning "browse what's on" and once
+                meaning "the ones I run", with nothing to tell them apart.
+                It pairs with "My venues" directly above it.
+              */}
+              <NavLink to="/owner/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>My events</NavLink>
             </>
           )}
           {isAdmin && (
-            <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Admin</NavLink>
+            <>
+              <span className="nav-group-divider" aria-hidden="true" />
+              <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Admin</NavLink>
+            </>
           )}
         </nav>
 

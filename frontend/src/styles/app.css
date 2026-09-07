@@ -136,18 +136,46 @@
 }
 .logo:hover .logo-mark { transform: rotate(6deg) scale(1.08); }
 
-.nav-links { display: flex; gap: 6px; margin-left: 10px; }
+.nav-links {
+  display: flex; align-items: center; gap: 4px; margin-left: 10px;
+  /* Centred and equal-height, so a one-word item and a two-word item sit on
+     the same baseline instead of one riding higher than the other. */
+}
 .nav-link {
-  padding: 10px 16px; border-radius: 99px;
-  font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .95rem;
+  /* A rounded RECTANGLE, not a pill.
+     `border-radius: 99px` reads fine on a wide label and turns a short one
+     into a circle the moment it is filled — "Map" became a lime disc while
+     "Find venues" stayed a lozenge, so the active state changed shape
+     depending on which page you were on. */
+  padding: 9px 13px; border-radius: var(--r-sm);
+  font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .93rem;
   color: rgba(255,255,255,.7);
   border: var(--bw) solid transparent;
-  transition: all .2s var(--spring);
+  /* Two-word labels were wrapping, which made those items two lines tall and
+     threw the whole row out of alignment. */
+  white-space: nowrap; line-height: 1.2;
+  transition: background .2s var(--ease), color .2s var(--ease), transform .2s var(--spring);
 }
 .nav-link:hover { color: #fff; background: rgba(255,255,255,.1); transform: translateY(-2px); }
 .nav-link.active {
   color: var(--ink); background: var(--volt);
-  border-color: var(--stroke); box-shadow: 3px 3px 0 rgba(255,255,255,.9);
+  border-color: var(--stroke); box-shadow: 2px 2px 0 rgba(255,255,255,.9);
+}
+
+/* A hairline before the owner/admin group, so "My venues" onwards reads as a
+   different set of tools rather than more of the same navigation. */
+.nav-group-divider {
+  width: var(--bw-thin); height: 22px; flex-shrink: 0;
+  background: rgba(255,255,255,.18); border-radius: 99px; margin: 0 7px;
+}
+
+/* The bar carries up to nine items once someone is an owner AND an admin.
+   Tighten before hiding — a cramped label still navigates, a hidden one
+   does not. */
+@media (max-width: 1180px) {
+  .nav-link { padding: 8px 10px; font-size: .88rem; }
+  .nav-links { gap: 2px; }
+  .nav-group-divider { margin: 0 4px; }
 }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 11px; }
 @media (max-width: 900px) { .nav-links { display: none; } }
