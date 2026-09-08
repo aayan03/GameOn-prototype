@@ -5,6 +5,7 @@ import { openCheckout } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Confetti from '../components/Confetti.jsx';
+import HoldCountdown from '../components/HoldCountdown.jsx';
 import CancelModal from '../components/CancelModal.jsx';
 import { prettyDateLong, slotRangeLabel, relativeTime } from '../utils/date.js';
 import { rupees, SPORT_LABELS } from '../utils/format.js';
@@ -252,6 +253,16 @@ export default function BookingDetail() {
                 Your slot is held, but it is not confirmed and there is no ticket until
                 the payment goes through.
               </p>
+
+              {/* The clock the server is already keeping. Without it somebody
+                  comes back an hour later, presses Pay, and gets an error
+                  about a slot they thought was theirs. */}
+              <div style={{ marginBottom: 12 }}>
+                <HoldCountdown
+                  createdAt={booking.createdAt}
+                  onExpire={() => bookingApi.get(groupRef).then(({ data }) => setBooking(data)).catch(() => {})}
+                />
+              </div>
               <div className="row gap-10 wrap">
                 <button className="btn btn-primary" onClick={payNow} disabled={paying}>
                   {paying ? <span className="spinner spinner-light" style={{ width: 16, height: 16 }} />

@@ -6,6 +6,7 @@ import { ok } from '../utils/response.js';
 import { BOOKING_STATUS } from '../config/constants.js';
 import * as payments from '../services/payment.service.js';
 import * as loyalty from '../services/loyalty.service.js';
+import * as refunds from '../services/refund.service.js';
 import logger from '../utils/logger.js';
 
 export const orderSchema = z.object({
@@ -97,9 +98,47 @@ export const verify = asyncHandler(async (req, res) => {
     return ok(res, { alreadyPaid: true, message: 'This booking is already paid.' });
   }
 
-  // ── Only a live, unsettled booking may be paid for. Without this a
-  //    cancelled booking could be flipped back to confirmed after its refund
-  //    had already been paid out.
+  /**
+   * ── Only a live, unsettled booking may be paid for. Without this a
+   *    cancelled booking could be flipped back to confirmed after its refund
+   *    had already been paid out.
+   *
+   * EXPIRED is handled separately and carefully. A checkout hold is released
+   * after ten minutes, and the player may well be on Razorpay's page at that
+   * moment — so by the time they land back here the money is captured and the
+   * slot is gone. Throwing would leave them charged for nothing, with no
+   * record that a refund was owed. The slot cannot be given back (somebody
+   * else may hold it now), so the money is.
+   */
+  if (rows[0].status === BOOKING_STATUS.EXPIRED) {
+    const captured = await payments.fetchPayment(paymentId).catch(() => null);
+    const amount = captured && ['captured', 'authorized'].includes(captured.status)
+      ? Math.round(captured.amount / 100)
+      : 0;
+
+    if (amount > 0) {
+      await refunds.issueRefund({
+        groupRef,
+        rows,
+        amount,
+        user: req.user,
+        description: 'Slot hold expired before the payment completed',
+        reference: paymentId,
+      });
+      logger.warn('payment landed after hold expiry - refunded', {
+        groupRef, paymentId, amount,
+      });
+      throw ApiError.badRequest(
+        'That slot was released because the payment took longer than ten minutes. '
+        + 'Your money is on its way back — it usually lands within a few working days.'
+      );
+    }
+
+    throw ApiError.badRequest(
+      'That slot was released because the payment was not completed in time. Nothing was charged.'
+    );
+  }
+
   if (![BOOKING_STATUS.PENDING, BOOKING_STATUS.CONFIRMED].includes(rows[0].status)) {
     throw ApiError.badRequest('This booking is no longer active');
   }

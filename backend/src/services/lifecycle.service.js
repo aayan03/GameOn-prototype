@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Booking, TeamUpPost, User, Venue, Review } from '../models/index.js';
-import { BOOKING_STATUS } from '../config/constants.js';
+import { BOOKING_STATUS, BOOKING_MODES } from '../config/constants.js';
 import * as notify from './notification.service.js';
 import * as refunds from './refund.service.js';
 import * as loyalty from './loyalty.service.js';
@@ -143,6 +143,79 @@ async function completeFinishedBookings(now, runId) {
  *    full — the venue failed to answer, so no policy deduction applies.
  */
 const MIN_REQUEST_AGE_MS = 45 * 60 * 1000;
+
+/**
+ * How long a checkout may hold a slot.
+ *
+ * An INSTANT venue paid by gateway is written PENDING with `slotLocked: true`
+ * and `payment.status: 'unpaid'`, then the player is sent to Razorpay. Close
+ * that tab and the row stayed exactly as it was — expireStaleRequests only
+ * looks at bookings starting within two hours, so an abandoned checkout for
+ * next Saturday held that pitch for a week and nobody else could book it.
+ *
+ * Ten minutes is generous for a card payment and short enough that a slot is
+ * not lost for an evening. It is NOT applied to manual venues: those sit
+ * pending because an owner has not answered yet, which is a different thing
+ * and needs hours, not minutes.
+ */
+const HOLD_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Release slots held by a checkout nobody finished.
+ *
+ * Nothing is refunded here because nothing was paid — `payment.status` is
+ * part of the filter. If a payment DOES land after this runs, the verify
+ * endpoint refunds it rather than failing with the money captured; see
+ * payment.controller.
+ */
+async function expireUnpaidHolds(now) {
+  const cutoff = new Date(now.getTime() - HOLD_TIMEOUT_MS);
+
+  const stale = await Booking.find({
+    status: BOOKING_STATUS.PENDING,
+    mode: BOOKING_MODES.AUTOMATED,
+    'payment.status': 'unpaid',
+    'payment.method': 'gateway',
+    slotLocked: true,
+    createdAt: { $lte: cutoff },
+  })
+    .select('_id user groupRef bookingRef venue')
+    .limit(500)
+    .lean();
+
+  if (!stale.length) return { holdsReleased: 0 };
+
+  const groups = [...new Set(stale.map((b) => b.groupRef))];
+  let released = 0;
+
+  for (const groupRef of groups) {
+    /**
+     * Conditional on the status AND on still being unpaid, so a payment that
+     * landed between the read above and this write wins. Losing that race
+     * would cancel a booking somebody had just successfully paid for.
+     */
+    const result = await Booking.updateMany(
+      {
+        groupRef,
+        status: BOOKING_STATUS.PENDING,
+        'payment.status': 'unpaid',
+      },
+      { $set: { status: BOOKING_STATUS.EXPIRED, slotLocked: false } }
+    );
+    if (!result.modifiedCount) continue;
+    released += result.modifiedCount;
+
+    const first = stale.find((b) => b.groupRef === groupRef);
+    await notify.notify(first.user, 'booking_cancelled', {
+      title: 'Your slot was released',
+      body: 'The payment was not completed in time, so the slot has gone back to '
+        + 'the venue. Nothing was charged — book again if it is still free.',
+      link: '/bookings',
+    }).catch(() => {});
+  }
+
+  return { holdsReleased: released };
+}
 
 async function expireStaleRequests(now) {
   const cutoff = new Date(now.getTime() + 2 * 3600 * 1000);
@@ -384,6 +457,7 @@ export async function runLifecycle() {
     for (const [name, fn] of Object.entries({
       complete: completeFinishedBookings,
       expire: expireStaleRequests,
+      holds: expireUnpaidHolds,
       remind: sendReminders,
       reliability: settleReliability,
     })) {

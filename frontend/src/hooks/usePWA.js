@@ -90,6 +90,23 @@ export default function usePWA() {
     updateReady,
     applyUpdate,
     canInstall: Boolean(installPrompt) && !installed,
+    /**
+     * Safari on iOS never fires `beforeinstallprompt`, so `canInstall` is
+     * permanently false on an iPhone and the install banner never appeared
+     * there — despite the app being a perfectly good PWA on iOS, with the
+     * apple-touch-icon and standalone display already set up. Those users
+     * have to be told to do it by hand instead.
+     *
+     * `MSStream` excludes old IE-on-Windows-Phone, which also matched the
+     * iPad UA string.
+     */
+    isIOS: typeof navigator !== 'undefined'
+      && /iPad|iPhone|iPod/.test(navigator.userAgent)
+      && !window.MSStream,
+    /** Already added to the home screen — iOS reports it here, not via matchMedia. */
+    isStandalone: typeof window !== 'undefined'
+      && (window.navigator.standalone === true
+        || window.matchMedia?.('(display-mode: standalone)').matches),
     install,
     installed,
   };

@@ -18,10 +18,11 @@ const INSTALL_DISMISSED = 'gameon_install_dismissed';
  * and otherwise nothing at all.
  */
 export default function AppShell() {
-  const { updateReady, applyUpdate, canInstall, install } = usePWA();
+  const { updateReady, applyUpdate, canInstall, install, isIOS, isStandalone } = usePWA();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [showInstall, setShowInstall] = useState(false);
+  const [showIOSHint, setShowIOSHint] = useState(false);
 
   // Native setup, once.
   useEffect(() => {
@@ -69,6 +70,28 @@ export default function AppShell() {
   }, [isAuthenticated, navigate]);
 
   // Offer install only after the user has had a reason to want it.
+  /**
+   * iOS gets told how, because it cannot be shown a button.
+   *
+   * Safari fires no `beforeinstallprompt`, so there is nothing to call — the
+   * only route is Share → Add to Home Screen, done by hand. Suppressed once
+   * they have actually done it, and remembered when dismissed so it is a
+   * suggestion rather than a nag.
+   */
+  useEffect(() => {
+    if (!isIOS || isStandalone) return undefined;
+    try {
+      if (localStorage.getItem('gameon_ios_hint_dismissed')) return undefined;
+    } catch { /* private mode — show it, it is only a hint */ }
+    const t = setTimeout(() => setShowIOSHint(true), 4000);
+    return () => clearTimeout(t);
+  }, [isIOS, isStandalone]);
+
+  const dismissIOSHint = () => {
+    setShowIOSHint(false);
+    try { localStorage.setItem('gameon_ios_hint_dismissed', '1'); } catch { /* noop */ }
+  };
+
   useEffect(() => {
     if (!canInstall) return undefined;
     let dismissed = false;
@@ -91,6 +114,19 @@ export default function AppShell() {
           <IconRefresh style={{ width: 18, height: 18, flexShrink: 0 }} />
           <span className="grow">A new version of GameOn is ready.</span>
           <button className="btn btn-dark btn-sm" onClick={applyUpdate}>Reload</button>
+        </div>
+      )}
+
+      {showIOSHint && (
+        <div className="app-bar install">
+          <IconSparkle style={{ width: 18, height: 18, flexShrink: 0 }} />
+          <span className="grow">
+            Add GameOn to your Home Screen: tap <strong>Share</strong>, then{' '}
+            <strong>Add to Home Screen</strong>.
+          </span>
+          <button className="icon-btn bare" onClick={dismissIOSHint} aria-label="Not now">
+            <IconClose style={{ width: 17, height: 17 }} />
+          </button>
         </div>
       )}
 

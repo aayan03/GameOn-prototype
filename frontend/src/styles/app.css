@@ -2194,3 +2194,7 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 .addr-link:hover { color: var(--violet); text-decoration: underline; }
 .vc-meta-link { text-decoration: none; }
 .vc-meta-link:hover { color: var(--violet); text-decoration: underline; }
+
+/* The countdown reads as a clock, so the numbers should not reflow the text
+   beside them every second. */
+.hold-countdown strong { font-variant-numeric: tabular-nums; }

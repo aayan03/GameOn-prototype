@@ -29,7 +29,10 @@ async function start() {
   // day-before reminders and settles reliability. Idempotent, so a restart
   // mid-run is harmless. Also exposed at POST /api/admin/lifecycle for
   // platforms where a long-lived interval is not dependable.
-  startLifecycleScheduler(15);
+  // Five, not fifteen. The unpaid-checkout hold expires after ten minutes,
+  // and a sweep that runs every fifteen would make that anywhere from ten to
+  // twenty-five — long enough that the slot is still lost for the evening.
+  startLifecycleScheduler(5);
   const server = app.listen(env.PORT, () => {
     logger.info('GameOn API listening', {
       port: env.PORT,
