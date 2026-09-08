@@ -2250,3 +2250,79 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
     transform-origin: top center;
   }
 }
+
+/* ── Mobile menu ────────────────────────────────────────────────
+   `.nav-links` is hidden below 900px and the tab bar holds six items, so
+   without this most of the site was reachable on a phone only by typing the
+   URL — Map and Events from the footer, and nothing at all for an owner's
+   calendar, promos, customers or payouts, or an admin's queue. */
+
+.nav-more {
+  display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: var(--r-sm); flex-shrink: 0;
+  background: rgba(255,255,255,.1); color: #fff;
+  border: var(--bw-thin) solid rgba(255,255,255,.28);
+  transition: background .16s var(--snap);
+}
+.nav-more:hover { background: rgba(255,255,255,.2); }
+.nav-more-bars { display: grid; gap: 4px; width: 17px; }
+.nav-more-bars span { height: 2px; border-radius: 2px; background: currentColor; }
+
+/* Above 900px the real link bar is back, so the button would be a duplicate. */
+@media (min-width: 901px) { .nav-more { display: none; } }
+
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 1200;
+  background: rgba(5,5,12,.5); backdrop-filter: blur(3px);
+  animation: paletteFade .14s ease-out;
+}
+.sheet {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(320px, 86vw);
+  display: flex; flex-direction: column;
+  background: var(--surface); color: var(--text);
+  border-left: var(--bw) solid var(--stroke);
+  box-shadow: -6px 0 0 rgba(0,0,0,.28);
+  animation: sheetIn .2s var(--snap);
+}
+/* From the right, because that is the edge the button is on. */
+@keyframes sheetIn { from { transform: translateX(100%); } to { transform: none; } }
+
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 14px; flex-shrink: 0;
+  border-bottom: var(--bw-thin) solid var(--hairline);
+  font-family: 'Outfit', sans-serif; font-size: 1.05rem;
+}
+.sheet-body {
+  overflow-y: auto; flex: 1;
+  /* Clears the home indicator on a notched phone. */
+  padding: 8px 8px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.sheet-group + .sheet-group { margin-top: 10px; }
+.sheet-label {
+  padding: 10px 12px 6px;
+  font-family: 'Outfit', sans-serif; font-size: .7rem; font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+}
+.sheet-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 12px; border-radius: var(--r-sm);
+  color: var(--text); font-weight: 600; font-size: .96rem;
+}
+.sheet-item:hover { background: var(--surface-2); }
+.sheet-item.active { background: var(--volt-soft); font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .sheet-backdrop { animation: none; }
+}
+
+/* ── Very small phones ──────────────────────────────────────────
+   The bar carries a logo, a menu button, a theme toggle, a bell and an
+   avatar. At 320px that is nine pixels more than there is room for, and the
+   whole page scrolls sideways as a result. The mark alone is still the link
+   home, and the anchor's aria-label still reads "GameOn home" — dropping the
+   wordmark buys eighty pixels where tightening gaps buys nine. */
+@media (max-width: 420px) {
+  .logo-word { display: none; }
+}

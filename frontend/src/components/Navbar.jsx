@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { initials, rupees } from '../utils/format.js';
 import TierBadge from './TierBadge.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import MobileMenu from './MobileMenu.jsx';
+import { desktopNavGroups } from '../config/nav.js';
 import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle } from './Icons.jsx';
 
 export default function Navbar() {
@@ -31,41 +33,36 @@ export default function Navbar() {
       <div className="container nav-inner">
         <Link to="/" className="logo" aria-label="GameOn home">
           <span className="logo-mark">GO</span>
-          GameOn
+          <span className="logo-word">GameOn</span>
         </Link>
 
+        {/*
+          Rendered from config/nav.js, which the mobile sheet also reads. It
+          used to be written out by hand here — so a link added to this bar
+          was invisible on any screen under 900px until somebody remembered
+          the tab bar too, which is exactly how Map, Events and every owner
+          page came to be unreachable on a phone.
+        */}
         <nav className="nav-links" aria-label="Main">
-          <NavLink to="/venues" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Find venues</NavLink>
-          <NavLink to="/map" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Map</NavLink>
-          <NavLink to="/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Events</NavLink>
-          <NavLink to="/playgrounds" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Free grounds</NavLink>
-          <NavLink to="/teamup" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>TeamUp</NavLink>
-          {isAuthenticated && (
-            <NavLink to="/teams" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Teams</NavLink>
-          )}
-          {isOwner && (
-            <>
-              <span className="nav-group-divider" aria-hidden="true" />
-              <NavLink to="/owner" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>My venues</NavLink>
-              <NavLink to="/owner/requests" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Requests</NavLink>
-              {/*
-                "My events", not "Events" — an owner otherwise saw the word
-                twice in one bar, once meaning "browse what's on" and once
-                meaning "the ones I run", with nothing to tell them apart.
-                It pairs with "My venues" directly above it.
-              */}
-              <NavLink to="/owner/events" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>My events</NavLink>
-            </>
-          )}
-          {isAdmin && (
-            <>
-              <span className="nav-group-divider" aria-hidden="true" />
-              <NavLink to="/admin" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>Admin</NavLink>
-            </>
-          )}
+          {desktopNavGroups({ isAuthenticated, isOwner, isAdmin }).map((group, i) => (
+            <Fragment key={group.key}>
+              {i > 0 && <span className="nav-group-divider" aria-hidden="true" />}
+              {group.links.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                >
+                  {l.label}
+                </NavLink>
+              ))}
+            </Fragment>
+          ))}
         </nav>
 
         <div className="nav-right">
+          {/* Below 900px this is the ONLY way to most of the site. */}
+          <MobileMenu />
           {/* Before the bell, so it does not move when a notification badge
               appears and changes the bell's width. */}
           <ThemeToggle />
