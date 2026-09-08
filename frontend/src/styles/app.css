@@ -147,12 +147,12 @@
      the same baseline instead of one riding higher than the other. */
 }
 .nav-link {
-  /* A rounded RECTANGLE, not a pill.
-     `border-radius: 99px` reads fine on a wide label and turns a short one
-     into a circle the moment it is filled — "Map" became a lime disc while
-     "Find venues" stayed a lozenge, so the active state changed shape
-     depending on which page you were on. */
-  padding: 9px 13px; border-radius: var(--r-sm);
+  /* Capsule. This was a rounded rectangle because a filled short label like
+     "Map" turned into a lime disc next to a lozenge "Find venues" — but the
+     bar now carries grouped headings (Play, Events, Players, Manage), which
+     are close enough in length that the shape stays consistent. The radius
+     is restated below with the buttons so the two cannot drift. */
+  padding: 9px 13px;
   font-family: 'Outfit', sans-serif; font-weight: 700; font-size: .93rem;
   color: rgba(255,255,255,.7);
   border: var(--bw) solid transparent;
@@ -161,7 +161,19 @@
   white-space: nowrap; line-height: 1.2;
   transition: background .2s var(--ease), color .2s var(--ease), transform .2s var(--spring);
 }
-.nav-link:hover { color: #fff; background: rgba(255,255,255,.1); transform: translateY(-2px); }
+/*
+  The whole control changes colour, the way the hero's sport chips do —
+  a tint on hover is easy to miss on a dark bar, and these are the primary
+  way around the site. Lift and hard shadow come from the same rule, so a
+  hovered item reads as picked up rather than merely shaded.
+*/
+.nav-link:hover {
+  color: var(--ink); background: var(--volt); border-color: var(--stroke);
+  box-shadow: 3px 3px 0 rgba(255,255,255,.9);
+  transform: translateY(-3px);
+}
+/* Already lit because you are on it; hovering just lifts it. */
+.nav-link.active:hover { transform: translateY(-3px); }
 .nav-link.active {
   color: var(--ink); background: var(--volt);
   border-color: var(--stroke); box-shadow: 2px 2px 0 rgba(255,255,255,.9);
@@ -2251,78 +2263,199 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
   }
 }
 
-/* ── Mobile menu ────────────────────────────────────────────────
+/* -- Mobile menu ------------------------------------------------
    `.nav-links` is hidden below 900px and the tab bar holds six items, so
    without this most of the site was reachable on a phone only by typing the
-   URL — Map and Events from the footer, and nothing at all for an owner's
-   calendar, promos, customers or payouts, or an admin's queue. */
+   URL. Shaped like a platform menu rather than a list of links: every row is
+   a capsule of the SAME height with its icon in a tinted chip, because equal
+   targets are easier to hit without looking, and that is what a menu row
+   looks like on both phones. */
 
 .nav-more {
   display: grid; place-items: center;
-  width: 38px; height: 38px; border-radius: var(--r-sm); flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 99px; flex-shrink: 0;
   background: rgba(255,255,255,.1); color: #fff;
   border: var(--bw-thin) solid rgba(255,255,255,.28);
   transition: background .16s var(--snap);
 }
-.nav-more:hover { background: rgba(255,255,255,.2); }
-.nav-more-bars { display: grid; gap: 4px; width: 17px; }
+.nav-more:hover, .nav-more.open { background: rgba(255,255,255,.22); }
+.nav-more-bars { display: grid; gap: 4px; width: 16px; }
 .nav-more-bars span { height: 2px; border-radius: 2px; background: currentColor; }
-
-/* Above 900px the real link bar is back, so the button would be a duplicate. */
 @media (min-width: 901px) { .nav-more { display: none; } }
 
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 1200;
-  background: rgba(5,5,12,.5); backdrop-filter: blur(3px);
+  background: rgba(5,5,12,.55); backdrop-filter: blur(4px);
   animation: paletteFade .14s ease-out;
 }
 .sheet {
   position: absolute; top: 0; right: 0; bottom: 0;
-  width: min(320px, 86vw);
+  width: min(330px, 88vw);
   display: flex; flex-direction: column;
-  background: var(--surface); color: var(--text);
+  background: var(--bg); color: var(--text);
   border-left: var(--bw) solid var(--stroke);
-  box-shadow: -6px 0 0 rgba(0,0,0,.28);
-  animation: sheetIn .2s var(--snap);
+  box-shadow: -8px 0 0 rgba(0,0,0,.3);
+  animation: sheetIn .22s var(--snap);
 }
 /* From the right, because that is the edge the button is on. */
 @keyframes sheetIn { from { transform: translateX(100%); } to { transform: none; } }
 
 .sheet-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 16px 14px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  padding: calc(14px + var(--safe-top)) 14px 14px;
   border-bottom: var(--bw-thin) solid var(--hairline);
-  font-family: 'Outfit', sans-serif; font-size: 1.05rem;
+  background: var(--surface);
 }
+.sheet-who { display: flex; align-items: center; gap: 11px; flex: 1; min-width: 0; }
+.sheet-who strong {
+  display: block; font-family: 'Outfit', sans-serif; font-size: .98rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sheet-role { display: block; font-size: .8rem; color: var(--text-faint); }
+.sheet-avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--violet); color: #fff;
+  border: var(--bw-thin) solid var(--stroke);
+  font-family: 'Outfit', sans-serif; font-weight: 800; font-size: .88rem;
+}
+.sheet-avatar.guest { background: var(--surface-2); color: var(--text-soft); }
+.sheet-x {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-soft);
+  border: var(--bw-thin) solid var(--hairline);
+}
+.sheet-x:hover { color: var(--text); }
+
 .sheet-body {
   overflow-y: auto; flex: 1;
   /* Clears the home indicator on a notched phone. */
-  padding: 8px 8px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 12px calc(20px + env(safe-area-inset-bottom, 0px));
 }
-.sheet-group + .sheet-group { margin-top: 10px; }
+.sheet-group + .sheet-group { margin-top: 14px; }
 .sheet-label {
-  padding: 10px 12px 6px;
-  font-family: 'Outfit', sans-serif; font-size: .7rem; font-weight: 800;
-  letter-spacing: .12em; text-transform: uppercase; color: var(--text-faint);
+  padding: 8px 6px;
+  font-family: 'Outfit', sans-serif; font-size: .68rem; font-weight: 800;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint);
 }
+
+/* Capsules, all one height, so the column reads as a set of controls rather
+   than a paragraph of links. */
 .sheet-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 13px 12px; border-radius: var(--r-sm);
-  color: var(--text); font-weight: 600; font-size: .96rem;
+  display: flex; align-items: center; gap: 12px;
+  min-height: 50px; padding: 0 16px 0 8px; margin-bottom: 8px;
+  border-radius: 99px;
+  background: var(--surface); color: var(--text);
+  border: var(--bw-thin) solid var(--hairline);
+  font-weight: 700; font-size: .95rem;
+  transition: transform .16s var(--snap), border-color .16s, background .16s;
 }
-.sheet-item:hover { background: var(--surface-2); }
-.sheet-item.active { background: var(--volt-soft); font-weight: 800; }
+.sheet-item:last-child { margin-bottom: 0; }
+/*
+  Hover and current-page both fill the whole capsule, because "this one is
+  lit" is the clearest thing a menu row can say. They are told apart by
+  motion: hovering lifts the row, being on the page does not.
+
+  The icon chip inverts to ink so it stays visible on the neon, rather than
+  a pale grey circle disappearing into it.
+*/
+.sheet-item:hover,
+.sheet-item.active {
+  background: var(--volt); color: var(--ink); border-color: var(--stroke);
+}
+.sheet-item:hover .sheet-ico,
+.sheet-item.active .sheet-ico { background: var(--ink); color: var(--volt); }
+.sheet-item:hover { transform: translateX(-3px); box-shadow: -3px 3px 0 rgba(0,0,0,.35); }
+.sheet-item.primary { background: var(--volt); color: var(--ink); border-color: var(--stroke); }
+
+.sheet-ico {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-soft);
+  transition: background .16s, color .16s;
+}
+.sheet-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   .sheet, .sheet-backdrop { animation: none; }
 }
 
-/* ── Very small phones ──────────────────────────────────────────
-   The bar carries a logo, a menu button, a theme toggle, a bell and an
-   avatar. At 320px that is nine pixels more than there is room for, and the
-   whole page scrolls sideways as a result. The mark alone is still the link
-   home, and the anchor's aria-label still reads "GameOn home" — dropping the
-   wordmark buys eighty pixels where tightening gaps buys nine. */
-@media (max-width: 420px) {
-  .logo-word { display: none; }
+/* ── Grouped nav ────────────────────────────────────────────────
+   Nine flat links beside a logo was a wall of words — an owner read
+   Find venues / Map / Events / Free grounds / TeamUp / Teams / My venues /
+   Requests / My events across one line. Four headings with the detail one
+   click down is the same information at a size you can scan. */
+
+.nav-menu { position: relative; }
+
+/* Capsule, not the rounded rectangle this had become. */
+.nav-link,
+.nav-link-btn { border-radius: 99px; }
+
+.nav-link-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: 0; font: inherit; cursor: pointer;
+}
+.nav-caret { transition: transform .18s var(--snap); flex-shrink: 0; }
+
+.nav-dropdown {
+  position: absolute; top: calc(100% + 10px); left: 0; z-index: 1000;
+  min-width: 264px; padding: 7px;
+  background: var(--surface); color: var(--text);
+  border: var(--bw) solid var(--stroke); border-radius: var(--r-lg);
+  box-shadow: var(--sh);
+  animation: popIn .18s var(--spring) both; transform-origin: top left;
+}
+/* Capsules here too, matched in height, so the desktop menu and the phone
+   sheet are recognisably the same control. */
+.nav-drop-item {
+  display: flex; align-items: center; gap: 11px;
+  min-height: 52px; padding: 0 14px 0 7px; margin-bottom: 5px;
+  border-radius: 99px; color: var(--text);
+  border: var(--bw-thin) solid transparent;
+  transition: background .16s, border-color .16s;
+}
+.nav-drop-item:last-child { margin-bottom: 0; }
+/* Same rule as the sheet, so the two surfaces behave identically. */
+.nav-drop-item:hover,
+.nav-drop-item.active {
+  background: var(--volt); color: var(--ink); border-color: var(--stroke);
+}
+.nav-drop-item:hover .nav-drop-ico,
+.nav-drop-item.active .nav-drop-ico { background: var(--ink); color: var(--volt); }
+/* The hint is a lighter grey by default; on neon it needs to be ink too or
+   it drops to roughly 2:1 against the fill. */
+.nav-drop-item:hover .nav-drop-hint,
+.nav-drop-item.active .nav-drop-hint { color: var(--ink); opacity: .72; }
+.nav-drop-item:hover { transform: translateX(2px); }
+.nav-drop-ico {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-soft);
+}
+.nav-drop-text { min-width: 0; }
+.nav-drop-label { display: block; font-weight: 700; font-size: .93rem; }
+.nav-drop-hint {
+  display: block; margin-top: 1px;
+  font-size: .8rem; color: var(--text-soft); font-weight: 500;
+}
+
+/* ── Install, as a standing button ──────────────────────────────
+   The banner shows once and can be dismissed; this is the way back. Only
+   rendered when the browser has actually offered an install. */
+.nav-install {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  height: 38px; padding: 0 14px; border-radius: 99px;
+  background: var(--volt); color: var(--ink);
+  border: var(--bw-thin) solid var(--stroke);
+  font-family: 'Outfit', sans-serif; font-weight: 800; font-size: .86rem;
+  transition: transform .16s var(--snap), box-shadow .16s var(--snap);
+}
+.nav-install:hover { transform: translate(-1px,-1px); box-shadow: var(--sh-xs); }
+/* Under 900px the bar is tight and the sheet carries navigation; the word
+   goes, the icon stays. */
+@media (max-width: 900px) {
+  .nav-install { padding: 0; width: 38px; justify-content: center; }
+  .nav-install-text { display: none; }
 }

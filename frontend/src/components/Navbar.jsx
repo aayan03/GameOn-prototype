@@ -1,16 +1,19 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import usePWA from '../hooks/usePWA.js';
 import { initials, rupees } from '../utils/format.js';
 import TierBadge from './TierBadge.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import MobileMenu from './MobileMenu.jsx';
-import { desktopNavGroups } from '../config/nav.js';
-import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle } from './Icons.jsx';
+import NavMenu from './NavMenu.jsx';
+import { navMenus } from '../config/nav.js';
+import { IconUser, IconHeart, IconLogout, IconTicket, IconWallet, IconUsers, IconSparkle, IconDownload } from './Icons.jsx';
 
 export default function Navbar() {
   const { user, isAuthenticated, isOwner, logout } = useAuth();
+  const { canInstall, install } = usePWA();
   const isAdmin = user?.role === 'admin';
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -37,32 +40,48 @@ export default function Navbar() {
         </Link>
 
         {/*
-          Rendered from config/nav.js, which the mobile sheet also reads. It
-          used to be written out by hand here — so a link added to this bar
-          was invisible on any screen under 900px until somebody remembered
-          the tab bar too, which is exactly how Map, Events and every owner
-          page came to be unreachable on a phone.
+          Grouped headings with the detail one click down, rendered from
+          config/nav.js — which the mobile sheet also reads, so the two
+          cannot drift. Flat, an owner read nine links across one line:
+          Find venues / Map / Events / Free grounds / TeamUp / Teams /
+          My venues / Requests / My events.
         */}
         <nav className="nav-links" aria-label="Main">
-          {desktopNavGroups({ isAuthenticated, isOwner, isAdmin }).map((group, i) => (
-            <Fragment key={group.key}>
-              {i > 0 && <span className="nav-group-divider" aria-hidden="true" />}
-              {group.links.map((l) => (
+          {navMenus({ isAuthenticated, isOwner, isAdmin }).map((m) => (
+            m.to
+              ? (
                 <NavLink
-                  key={l.to}
-                  to={l.to}
+                  key={m.key}
+                  to={m.to}
                   className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                 >
-                  {l.label}
+                  {m.label}
                 </NavLink>
-              ))}
-            </Fragment>
+              )
+              : <NavMenu key={m.key} menu={m} />
           ))}
         </nav>
 
         <div className="nav-right">
           {/* Below 900px this is the ONLY way to most of the site. */}
           <MobileMenu />
+
+          {/*
+            A standing way in, not just the banner.
+
+            The install prompt appears once, a few seconds after load, and is
+            dismissible — so anyone who closed it, or was scrolling when it
+            slid past, had no route back and no reason to think the app could
+            be installed at all. `canInstall` is only true where the browser
+            has actually offered (Chrome and Edge, desktop and Android), so
+            this shows up exactly when pressing it will work.
+          */}
+          {canInstall && (
+            <button className="nav-install" onClick={install} title="Install GameOn as an app">
+              <IconDownload style={{ width: 15, height: 15 }} />
+              <span className="nav-install-text">Install</span>
+            </button>
+          )}
           {/* Before the bell, so it does not move when a notification badge
               appears and changes the bell's width. */}
           <ThemeToggle />

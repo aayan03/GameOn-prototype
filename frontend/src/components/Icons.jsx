@@ -94,3 +94,6 @@ export const IconEye = (p) => (
 export const IconEyeOff = (p) => (
   <svg viewBox="0 0 24 24" {...base} {...p}><path d="M10.6 6.7A9.9 9.9 0 0 1 12 6.6c6.4 0 10 5.4 10 5.4a17 17 0 0 1-3.2 3.6M6.4 7.9A16.6 16.6 0 0 0 2 12s3.6 5.4 10 5.4a10 10 0 0 0 3.4-.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="m3 3 18 18" /></svg>
 );
+export const IconDownload = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}><path d="M12 3v12" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M4 20h16" /></svg>
+);
