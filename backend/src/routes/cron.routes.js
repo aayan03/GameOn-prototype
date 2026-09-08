@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { runLifecycle } from '../services/lifecycle.service.js';
 import { Venue, User, Booking } from '../models/index.js';
 import { seedDatabase } from '../seed/seed.js';
+import { purgeDemoData, importLucknow } from '../services/import.service.js';
 import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -102,6 +103,48 @@ router.post('/seed', asyncHandler(async (req, res) => {
     // that hands back working credentials over HTTP is a credential leak even
     // when the caller had to know the cron secret to reach it.
     logins: { player: 'aayan@gameon.app', owner: 'shivanshu@gameon.app' },
+  });
+}));
+
+/**
+ * POST /api/cron/lucknow — swap the demo venues for real Lucknow listings.
+ *
+ * Dry run by DEFAULT. Nothing is written unless `?apply=true`, because the
+ * first half of this deletes venues and a scheduler that fires it by accident
+ * should not be able to empty the catalogue.
+ *
+ *   POST /api/cron/lucknow                    what would happen
+ *   POST /api/cron/lucknow?apply=true         do it, 10 venues
+ *   POST /api/cron/lucknow?apply=true&limit=22&purge=false
+ *
+ * Refuses to delete any demo venue a real person has booked. See
+ * services/import.service.js for what these listings are and are not — they
+ * carry real business names with UNVERIFIED prices, and stay unclaimed and
+ * assisted-booking-only for that reason.
+ */
+router.post('/lucknow', asyncHandler(async (req, res) => {
+  authorise(req);
+
+  const apply = req.query.apply === 'true';
+  const purge = req.query.purge !== 'false';
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 22);
+
+  const purged = purge ? await purgeDemoData({ apply }) : { skipped: true };
+  // If the purge refused, the demo venues are still there — importing on top
+  // would leave a half-done job, so stop and say why.
+  if (purged.refused) {
+    return ok(res, { applied: false, purged, imported: null });
+  }
+
+  const imported = await importLucknow({ limit, apply });
+
+  return ok(res, {
+    applied: apply,
+    purged,
+    imported,
+    message: apply
+      ? 'Done. These listings are UNCLAIMED with unverified prices — contact each venue.'
+      : 'Dry run. Nothing was written. Add ?apply=true to commit.',
   });
 }));
 
