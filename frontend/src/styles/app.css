@@ -257,6 +257,10 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 .btn-white   { background: var(--surface); color: var(--ink); }
 .btn-white:hover:not(:disabled) { background: var(--volt-soft); }
 .btn-danger  { background: var(--danger); color: #fff; }
+/* Destructive, but secondary — "Remove" sits beside Edit and Calendar in the
+   owner's venue row and should not outweigh them until it is hovered. */
+.btn-ghost.danger { color: var(--danger); }
+.btn-ghost.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 .btn-ghost   { background: transparent; color: var(--ink); box-shadow: var(--sh-xs); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface); box-shadow: var(--sh-sm); }
 /* On dark backgrounds the ink outline disappears — use a light one */

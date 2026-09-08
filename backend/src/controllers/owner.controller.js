@@ -129,7 +129,7 @@ export const overview = asyncHandler(async (req, res) => {
   const { days: d = 30, venueId } = req.validatedQuery || {};
   const ids = await ownedVenueIds(req.user, venueId);
 
-  const [stats, series, breakdown, reviews, venues] = await Promise.all([
+  const [stats, series, breakdown, reviews, venues, upcoming] = await Promise.all([
     analytics.overview(ids, d),
     analytics.revenueSeries(ids, d),
     analytics.revenueBreakdown(ids, d),
@@ -137,7 +137,23 @@ export const overview = asyncHandler(async (req, res) => {
     Venue.find({ _id: { $in: ids } })
       .select('name slug address bookingMode isActive moderationStatus rating reviewCount courts')
       .lean(),
+    /**
+     * Live bookings still ahead of us, per venue.
+     *
+     * The owner screens need this to say something true before a destructive
+     * edit: unlisting a venue hides it from search but does NOT cancel what
+     * people have already paid for, and replacing the court list is refused
+     * outright while any of these exist (see venue.controller.updateVenue).
+     * `slotLocked` is the same condition that guard uses — it is the flag a
+     * cancellation clears, so it means "still occupies the slot".
+     */
+    Booking.aggregate([
+      { $match: { venue: { $in: ids }, slotLocked: true, endsAt: { $gte: new Date() } } },
+      { $group: { _id: '$venue', count: { $sum: 1 } } },
+    ]),
   ]);
+
+  const upcomingBy = Object.fromEntries(upcoming.map((r) => [String(r._id), r.count]));
 
   return ok(res, {
     days: d,
@@ -149,6 +165,7 @@ export const overview = asyncHandler(async (req, res) => {
       ...v,
       courtCount: v.courts?.length || 0,
       startingPrice: v.courts?.length ? Math.min(...v.courts.map((c) => c.pricePerHour)) : 0,
+      upcomingBookings: upcomingBy[String(v._id)] || 0,
       courts: undefined,
     })),
   });

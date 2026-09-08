@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { venueApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -47,6 +47,22 @@ export default function OwnerVenueNew() {
   const { user } = useAuth();
   const { request: requestLocation, isLoading: locating } = useGeolocation();
 
+  /**
+   * One form, two jobs. `/owner/venues/new` creates; `/owner/venues/:id/edit`
+   * loads an existing venue into the same fields and PATCHes it.
+   *
+   * Kept as one component on purpose — the validation, the court editor and
+   * the cancellation-policy preview are the parts most likely to drift apart
+   * if they were duplicated, and they are exactly the parts that must agree
+   * between creating and editing.
+   */
+  const { id } = useParams();
+  const isEdit = Boolean(id);
+  const [loading, setLoading] = useState(isEdit);
+  const [loadError, setLoadError] = useState('');
+  // The courts as they arrived, so submit can tell whether they were touched.
+  const [originalCourts, setOriginalCourts] = useState(null);
+
   const [form, setForm] = useState({
     name: '',
     description: '',
@@ -74,6 +90,71 @@ export default function OwnerVenueNew() {
   const [busy, setBusy] = useState(false);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  useEffect(() => {
+    if (!isEdit) return undefined;
+    let cancelled = false;
+
+    setLoading(true);
+    venueApi.get(id)
+      .then(({ data }) => {
+        if (cancelled) return;
+        // getVenue wraps the row alongside its reviews.
+        const v = data.venue || data;
+        const [lng, lat] = v.location?.coordinates || [];
+        setForm({
+          name: v.name || '',
+          description: v.description || '',
+          bookingMode: v.bookingMode || 'automated',
+          manualPhone: v.manualContact?.phone || '',
+          manualWhatsapp: v.manualContact?.whatsapp || '',
+          responseTimeMins: v.manualContact?.responseTimeMins ?? 30,
+          line1: v.address?.line1 || '',
+          area: v.address?.area || '',
+          city: v.address?.city || '',
+          state: v.address?.state || '',
+          pincode: v.address?.pincode || '',
+          lat: lat != null ? String(lat) : '',
+          lng: lng != null ? String(lng) : '',
+          slotDurationMins: v.slotDurationMins || 60,
+          freeCancellationHours: v.cancellationPolicy?.freeCancellationHours ?? 24,
+          partialRefundHours: v.cancellationPolicy?.partialRefundHours ?? 6,
+          partialRefundPercent: v.cancellationPolicy?.partialRefundPercent ?? 50,
+        });
+        const loadedCourts = (v.courts || []).map((c) => ({
+          name: c.name || '',
+          sport: c.sport || 'football',
+          format: c.format || '',
+          capacity: c.capacity ?? 10,
+          pricePerHour: c.pricePerHour != null ? String(c.pricePerHour) : '',
+          peakPricePerHour: c.peakPricePerHour != null ? String(c.peakPricePerHour) : '',
+        }));
+        setCourts(loadedCourts.length ? loadedCourts : [blankCourt()]);
+        setOriginalCourts(loadedCourts);
+        setAmenities(v.amenities || []);
+        setImages(v.images?.length ? v.images : ['']);
+      })
+      .catch((err) => { if (!cancelled) setLoadError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [id, isEdit]);
+
+  /**
+   * Whether the court list actually changed.
+   *
+   * This matters more than it looks. The server REFUSES to replace the courts
+   * while any booking is still ahead — replacing them mints new subdocument
+   * ids and every live booking would point at a court that no longer exists.
+   * An edit form that posts everything it loaded would therefore fail to
+   * rename a venue purely because somebody has a game on Saturday. So the
+   * courts go up only when they were edited.
+   */
+  const courtsChanged = useMemo(() => {
+    if (!isEdit) return true;
+    if (!originalCourts) return false;
+    return JSON.stringify(courts) !== JSON.stringify(originalCourts);
+  }, [isEdit, courts, originalCourts]);
 
   const setCourt = (i, patch) =>
     setCourts((list) => list.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
@@ -142,15 +223,18 @@ export default function OwnerVenueNew() {
         lat: Number(form.lat),
         lng: Number(form.lng),
         slotDurationMins: Number(form.slotDurationMins),
-        courts: courts.map((c) => ({
-          name: c.name.trim(),
-          sport: c.sport,
-          capacity: Number(c.capacity) || 10,
-          pricePerHour: Number(c.pricePerHour),
-          // The schema takes null, not an empty string, for "no peak price".
-          ...(c.format.trim() ? { format: c.format.trim() } : {}),
-          ...(c.peakPricePerHour !== '' ? { peakPricePerHour: Number(c.peakPricePerHour) } : {}),
-        })),
+        // Left out of an edit that did not touch them — see `courtsChanged`.
+        ...(courtsChanged ? {
+          courts: courts.map((c) => ({
+            name: c.name.trim(),
+            sport: c.sport,
+            capacity: Number(c.capacity) || 10,
+            pricePerHour: Number(c.pricePerHour),
+            // The schema takes null, not an empty string, for "no peak price".
+            ...(c.format.trim() ? { format: c.format.trim() } : {}),
+            ...(c.peakPricePerHour !== '' ? { peakPricePerHour: Number(c.peakPricePerHour) } : {}),
+          })),
+        } : {}),
         cancellationPolicy: {
           freeCancellationHours: Number(form.freeCancellationHours),
           partialRefundHours: Number(form.partialRefundHours),
@@ -158,11 +242,15 @@ export default function OwnerVenueNew() {
         },
       };
 
-      if (form.description.trim()) payload.description = form.description.trim();
-      if (amenities.length) payload.amenities = amenities;
-
+      /**
+       * On an edit these are sent even when empty, so clearing a field
+       * actually clears it. On a create an empty key is just noise, so it is
+       * left out and the schema default applies.
+       */
       const urls = images.map((u) => u.trim()).filter(Boolean);
-      if (urls.length) payload.images = urls;
+      if (form.description.trim() || isEdit) payload.description = form.description.trim();
+      if (amenities.length || isEdit) payload.amenities = amenities;
+      if (urls.length || isEdit) payload.images = urls;
 
       const address = {
         line1: form.line1.trim(), area: form.area.trim(), city: form.city.trim(),
@@ -178,8 +266,13 @@ export default function OwnerVenueNew() {
         };
       }
 
-      const { data } = await venueApi.create(payload);
-      toast.success(data.message);
+      if (isEdit) {
+        await venueApi.update(id, payload);
+        toast.success('Changes saved.');
+      } else {
+        const { data } = await venueApi.create(payload);
+        toast.success(data.message);
+      }
       navigate('/owner', { replace: true });
     } catch (err) {
       setError(err.message);
@@ -190,6 +283,30 @@ export default function OwnerVenueNew() {
 
   const isManual = form.bookingMode === 'manual';
 
+  if (loading) {
+    return (
+      <div className="container section center" style={{ paddingTop: 60 }}>
+        <div className="spinner" style={{ margin: '0 auto' }} />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="container section" style={{ maxWidth: 860 }}>
+        <div className="card card-pad empty">
+          <div className="empty-icon">🏟️</div>
+          <h3>{loadError}</h3>
+          <p className="text-soft" style={{ marginTop: 8, marginBottom: 18 }}>
+            That venue could not be loaded. It may have been removed, or it may
+            not be yours to edit.
+          </p>
+          <Link to="/owner" className="btn btn-primary">Back to dashboard</Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container section fade-in" style={{ maxWidth: 860 }}>
       <Link to="/owner" className="link-btn row gap-6" style={{ marginBottom: 16 }}>
@@ -198,13 +315,30 @@ export default function OwnerVenueNew() {
 
       <div className="page-head">
         <span className="eyebrow">Owner</span>
-        <h1 style={{ marginTop: 8 }}>List a venue</h1>
+        <h1 style={{ marginTop: 8 }}>{isEdit ? 'Edit venue' : 'List a venue'}</h1>
         <p className="text-soft">
-          {user?.isVerified
-            ? 'Your account is verified, so this goes live as soon as you save it.'
-            : 'New listings are reviewed by our team before they appear publicly — usually within a day.'}
+          {isEdit
+            ? 'Changes go live as soon as you save. Players who have already booked keep their slot.'
+            : user?.isVerified
+              ? 'Your account is verified, so this goes live as soon as you save it.'
+              : 'New listings are reviewed by our team before they appear publicly — usually within a day.'}
         </p>
       </div>
+
+      {/*
+        Said before they try it, not after the server refuses. Replacing the
+        court list detaches live bookings from their court, so the server will
+        not allow it while any are outstanding.
+      */}
+      {isEdit && courtsChanged && (
+        <div className="alert alert-warn" style={{ marginBottom: 18 }}>
+          <span>
+            You have changed the courts. If anyone still has a booking here,
+            saving will be refused — cancel or play those fixtures first, or
+            undo the court changes and save the rest.
+          </span>
+        </div>
+      )}
 
       {error && <div className="alert alert-error" style={{ marginBottom: 18 }}>{error}</div>}
 
@@ -592,7 +726,9 @@ export default function OwnerVenueNew() {
 
         <div className="row gap-12 wrap">
           <button className="btn btn-primary btn-lg" disabled={busy}>
-            {busy ? <span className="spinner" style={{ width: 17, height: 17 }} /> : 'Publish venue'}
+            {busy
+              ? <span className="spinner" style={{ width: 17, height: 17 }} />
+              : (isEdit ? 'Save changes' : 'Publish venue')}
           </button>
           <Link to="/owner" className="btn btn-ghost btn-lg">Cancel</Link>
         </div>

@@ -57,6 +57,8 @@ export const venueApi = {
   mine:      () => api.get('/venues/owner/mine'),
   create:    (payload) => api.post('/venues', payload),
   update:    (id, payload) => api.patch(`/venues/${id}`, payload),
+  // Unlists rather than destroys — see venue.controller.deleteVenue.
+  remove:    (id) => api.del(`/venues/${id}`),
   toggleFav: (id) => api.post(`/venues/${id}/favorite`),
 };
 

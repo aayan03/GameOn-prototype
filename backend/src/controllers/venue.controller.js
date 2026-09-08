@@ -365,15 +365,45 @@ export const updateVenue = asyncHandler(async (req, res) => {
   return ok(res, venue);
 });
 
+/**
+ * DELETE /api/venues/:id — unlists rather than destroys.
+ *
+ * The row stays. Bookings reference this venue, reviews hang off it, and
+ * payouts are settled against it; deleting it for real would leave every one
+ * of those pointing at nothing, and a player who paid last week would lose
+ * the record of what they paid for.
+ *
+ * Unlisting is NOT a cancellation, and the two are easy to confuse. It hides
+ * the venue from search and from the public page; it does not refund anybody
+ * or tell anybody. Bookings already made still stand, and the booking screens
+ * keep working because they carry their own copy of the venue (they populate
+ * name, address, contact and the cancellation policy rather than re-fetching
+ * it). So the count goes back in the response: the owner is still on the hook
+ * for those fixtures and the UI has to be able to say so.
+ *
+ * Deliberately not blocked when bookings exist. Refusing would trap an owner
+ * whose turf is closing next month with no way to stop taking new bookings
+ * for it — which is the exact situation this endpoint is for.
+ *
+ * Reversible: PATCH the venue with `isActive: true` to relist, subject to the
+ * same moderation gate as any other activation.
+ */
 export const deleteVenue = asyncHandler(async (req, res) => {
   const venue = await Venue.findById(req.params.id);
   if (!venue) throw ApiError.notFound('Venue not found');
   if (venue.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
     throw ApiError.forbidden('You can only remove your own venues');
   }
-  venue.isActive = false; // soft delete keeps booking history intact
+
+  // Same condition updateVenue uses for its court guard: `slotLocked` is what
+  // a cancellation clears, so it means "still occupies the slot".
+  const upcomingBookings = await Booking.countDocuments({
+    venue: venue._id, slotLocked: true, endsAt: { $gte: new Date() },
+  });
+
+  venue.isActive = false;
   await venue.save();
-  return ok(res, { id: venue._id, deactivated: true });
+  return ok(res, { id: venue._id, deactivated: true, upcomingBookings });
 });
 
 /** GET /api/venues/owner/mine */

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ownerApi } from '../api/endpoints.js';
+import { ownerApi, venueApi } from '../api/endpoints.js';
 import { TrendChart, HourBars, RankedBars, StatTile } from '../components/Charts.jsx';
+import UnlistVenueModal from '../components/UnlistVenueModal.jsx';
 import { rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
 import {
   IconPin, IconBolt, IconPhone, IconStar, IconChevron,
-  IconRefresh, IconSparkle, IconUsers,
+  IconRefresh, IconSparkle, IconUsers, IconTrash, IconCheck,
 } from '../components/Icons.jsx';
 
 const RANGES = [
@@ -21,6 +22,9 @@ export default function OwnerDashboard() {
   const [hours, setHours] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // The venue awaiting an unlist confirmation, if any.
+  const [unlisting, setUnlisting] = useState(null);
+  const [relisting, setRelisting] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -32,6 +36,23 @@ export default function OwnerDashboard() {
   }, [days, venueId]);
 
   useEffect(load, [load]);
+
+  /**
+   * Putting a venue back. The server gates activation on moderation, so a
+   * listing that was rejected or is still in the queue will come back
+   * inactive however hard this asks — hence re-reading rather than assuming.
+   */
+  const relist = async (v) => {
+    setRelisting(v._id);
+    try {
+      await venueApi.update(v._id, { isActive: true });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRelisting('');
+    }
+  };
 
   const sports = useMemo(() => (data?.breakdown?.bySport || []).slice(0, 6).map((s) => ({
     ...s,
@@ -234,10 +255,34 @@ export default function OwnerDashboard() {
                     </div>
                   </div>
                   <div className="row gap-8 wrap">
+                    <Link to={`/owner/venues/${v._id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
                     <Link to={`/owner/calendar?venueId=${v._id}`} className="btn btn-ghost btn-sm">Calendar</Link>
-                    <Link to={`/venues/${v.slug || v._id}`} className="btn btn-ghost btn-sm">
-                      View <IconChevron style={{ width: 13, height: 13 }} />
-                    </Link>
+                    {/* A paused venue has no public page, so offer the way back
+                        instead of a link that would 404. */}
+                    {v.isActive ? (
+                      <Link to={`/venues/${v.slug || v._id}`} className="btn btn-ghost btn-sm">
+                        View <IconChevron style={{ width: 13, height: 13 }} />
+                      </Link>
+                    ) : v.moderationStatus === 'approved' && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => relist(v)}
+                        disabled={relisting === v._id}
+                      >
+                        {relisting === v._id
+                          ? <span className="spinner" style={{ width: 13, height: 13 }} />
+                          : <><IconCheck style={{ width: 13, height: 13 }} /> List again</>}
+                      </button>
+                    )}
+                    {v.isActive && (
+                      <button
+                        className="btn btn-ghost btn-sm danger"
+                        onClick={() => setUnlisting(v)}
+                        aria-label={`Remove ${v.name}`}
+                      >
+                        <IconTrash style={{ width: 13, height: 13 }} /> Remove
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -253,6 +298,14 @@ export default function OwnerDashboard() {
             </Link>
           </div>
         </>
+      )}
+
+      {unlisting && (
+        <UnlistVenueModal
+          venue={unlisting}
+          onClose={() => setUnlisting(null)}
+          onDone={() => { setUnlisting(null); load(); }}
+        />
       )}
     </div>
   );

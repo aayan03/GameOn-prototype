@@ -125,6 +125,8 @@ export default function App() {
                     <Route path="/owner/customers" element={<ProtectedRoute roles={OWNER}><OwnerCustomers /></ProtectedRoute>} />
                     <Route path="/owner/payouts" element={<ProtectedRoute roles={OWNER}><OwnerPayouts /></ProtectedRoute>} />
                     <Route path="/owner/venues/new" element={<ProtectedRoute roles={OWNER}><OwnerVenueNew /></ProtectedRoute>} />
+                    {/* Same component as /new — it loads the venue and PATCHes it. */}
+                    <Route path="/owner/venues/:id/edit" element={<ProtectedRoute roles={OWNER}><OwnerVenueNew /></ProtectedRoute>} />
                     <Route path="/owner/events" element={<ProtectedRoute roles={OWNER}><OwnerEvents /></ProtectedRoute>} />
 
                     {/* Admin — the role is only assignable directly in the database */}
