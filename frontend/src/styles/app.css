@@ -2198,3 +2198,28 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 /* The countdown reads as a clock, so the numbers should not reflow the text
    beside them every second. */
 .hold-countdown strong { font-variant-numeric: tabular-nums; }
+
+/* ── Notification panel on a phone ──────────────────────────────
+   The panel sized itself against the VIEWPORT — min(360px, 100vw - 32px) —
+   but anchored with `right: 0` to the BELL, which has the avatar sitting to
+   its right. So it always overhung the left edge by however wide that
+   neighbour was: measured at 34px off-screen on a 320px phone, taking the
+   icon and the start of every line with it.
+
+   Below 560px it stops being a dropdown hanging off a button and becomes a
+   sheet pinned to the viewport, which is what it already wanted to be at
+   that width. */
+@media (max-width: 560px) {
+  .bell-panel {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    /* `top: 100%` would resolve against the viewport once fixed, not the
+       bell, so the offset is stated outright. */
+    top: calc(var(--nav-h) + 8px);
+    width: auto;
+    /* Leaves room for the nav above and the home indicator below. */
+    max-height: calc(100vh - var(--nav-h) - 24px - env(safe-area-inset-bottom, 0px));
+    transform-origin: top center;
+  }
+}
