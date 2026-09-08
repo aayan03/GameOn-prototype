@@ -6,8 +6,9 @@ import { useToast } from '../context/ToastContext.jsx';
 import CancelModal from '../components/CancelModal.jsx';
 import ReviewModal from '../components/ReviewModal.jsx';
 import { prettyDate, slotRangeLabel, relativeTime } from '../utils/date.js';
-import { rupees, SPORT_ICONS } from '../utils/format.js';
+import { rupees } from '../utils/format.js';
 import { IconPin, IconWallet, IconTicket, IconChevron } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -44,7 +45,7 @@ function BookingRow({ booking, onCancel, onReview }) {
         </div>
 
         <div className="text-soft" style={{ fontSize: '.89rem', fontWeight: 600 }}>
-          {SPORT_ICONS[booking.sport]} {booking.courtName} · {slotRangeLabel(booking.slots)}
+          <SportIcon sport={booking.sport} size={14} /> {booking.courtName} · {slotRangeLabel(booking.slots)}
           {booking.slots.length > 1 && ` · ${booking.slots.length} slots`}
         </div>
 

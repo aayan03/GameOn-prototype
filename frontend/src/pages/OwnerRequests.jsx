@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { bookingApi } from '../api/endpoints.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { prettyDate, slotRangeLabel, relativeTime } from '../utils/date.js';
-import { rupees, SPORT_ICONS, initials } from '../utils/format.js';
+import { rupees, initials } from '../utils/format.js';
 import { IconCheck, IconClose, IconPhone, IconBolt, IconRefresh } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 function RequestCard({ booking, onDecide, busy }) {
   const player = booking.player || {};
@@ -27,7 +28,7 @@ function RequestCard({ booking, onDecide, busy }) {
       <div className="card card-pad card-flat" style={{ background: 'var(--surface-2)' }}>
         <div className="row gap-8 wrap" style={{ marginBottom: 6 }}>
           <strong>{booking.venue?.name}</strong>
-          <span className="badge badge-soft">{SPORT_ICONS[booking.sport]} {booking.courtName}</span>
+          <span className="badge badge-soft"><SportIcon sport={booking.sport} size={14} /> {booking.courtName}</span>
         </div>
         <div className="text-soft" style={{ fontWeight: 600 }}>
           {prettyDate(booking.date)} · {slotRangeLabel(booking.slots)}
@@ -90,7 +91,7 @@ function SettleRow({ booking: b, onSettle, busy }) {
           {b.payment?.status === 'paid' && <span className="badge badge-soft">Paid</span>}
         </div>
         <div className="text-soft" style={{ fontWeight: 600 }}>
-          {b.venue?.name} · {SPORT_ICONS[b.sport]} {b.courtName}
+          {b.venue?.name} · <SportIcon sport={b.sport} size={14} /> {b.courtName}
         </div>
         <div className="text-faint">
           {prettyDate(b.date)} · {slotRangeLabel(b.slots)} · {rupees(b.totalAmount)}

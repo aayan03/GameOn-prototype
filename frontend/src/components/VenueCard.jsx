@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { rupees, distanceLabel, SPORT_LABELS } from '../utils/format.js';
 import { IconStar, IconPin, IconBolt, IconPhone, IconHeart } from './Icons.jsx';
+import SportIcon from './SportIcon.jsx';
 
 export default function VenueCard({ venue, onToggleFavorite, isFavorite }) {
   const image = venue.images?.[0];
@@ -12,7 +13,7 @@ export default function VenueCard({ venue, onToggleFavorite, isFavorite }) {
       <Link to={`/venues/${venue.slug || venue._id}`} className="vc-media" aria-label={venue.name}>
         {image
           ? <img src={image} alt="" loading="lazy" />
-          : <div className="vc-media-fallback">{SPORT_ICONS[venue.sports?.[0]] || '🏟️'}</div>}
+          : <div className="vc-media-fallback"><SportIcon sport={venue.sports?.[0]} size={44} /></div>}
 
         <div className="vc-badges">
           {venue.isFeatured && <span className="badge badge-featured">Featured</span>}
@@ -55,7 +56,7 @@ export default function VenueCard({ venue, onToggleFavorite, isFavorite }) {
         <div className="vc-sports">
           {(venue.sports || []).slice(0, 4).map((s) => (
             <span key={s} className="vc-sport" title={SPORT_LABELS[s]}>
-              {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+              <SportIcon sport={s} size={14} /> {SPORT_LABELS[s]}
             </span>
           ))}
           {venue.sports?.length > 4 && <span className="vc-sport">+{venue.sports.length - 4}</span>}

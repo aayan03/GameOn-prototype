@@ -3,9 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import { venueApi } from '../api/endpoints.js';
 import useGeolocation from '../hooks/useGeolocation.js';
 import VenueMap from '../components/VenueMap.jsx';
-import { SPORT_ICONS, SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
+import { SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
 import { IconLocate, IconClose, IconChevron } from '../components/Icons.jsx';
 import { Link } from 'react-router-dom';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
@@ -53,7 +54,7 @@ export default function MapView() {
           <button className={`pill${!sport ? ' active' : ''}`} onClick={() => setParam('sport', '')}>All sports</button>
           {SPORTS.map((s) => (
             <button key={s} className={`pill${sport === s ? ' active' : ''}`} onClick={() => setParam('sport', sport === s ? '' : s)}>
-              {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+              <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
             </button>
           ))}
           <button

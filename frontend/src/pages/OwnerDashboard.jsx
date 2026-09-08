@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import { ownerApi, venueApi } from '../api/endpoints.js';
 import { TrendChart, HourBars, RankedBars, StatTile } from '../components/Charts.jsx';
 import UnlistVenueModal from '../components/UnlistVenueModal.jsx';
-import { rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { rupees, SPORT_LABELS } from '../utils/format.js';
 import {
   IconPin, IconBolt, IconPhone, IconStar, IconChevron,
   IconRefresh, IconSparkle, IconUsers, IconTrash, IconCheck,
 } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const RANGES = [
   { d: 7, label: '7 days' },
@@ -56,7 +57,8 @@ export default function OwnerDashboard() {
 
   const sports = useMemo(() => (data?.breakdown?.bySport || []).slice(0, 6).map((s) => ({
     ...s,
-    label: `${SPORT_ICONS[s.sport] || ''} ${SPORT_LABELS[s.sport] || s.sport}`,
+    // A chart axis is text, so this one stays a plain label.
+    label: SPORT_LABELS[s.sport] || s.sport,
   })), [data]);
 
   if (loading && !data) {
@@ -230,7 +232,7 @@ export default function OwnerDashboard() {
               {data.venues.map((v) => (
                 <div key={v._id} className="card card-pad owner-row">
                   <div className="court-icon" style={{ width: 50, height: 50, fontSize: '1.4rem' }}>
-                    {SPORT_ICONS[v.sports?.[0]] || '🏟️'}
+                    <SportIcon sport={v.sports?.[0]} size={26} />
                   </div>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row gap-8 wrap">

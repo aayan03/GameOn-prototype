@@ -5,11 +5,12 @@ import useGeolocation from '../hooks/useGeolocation.js';
 import useReveal from '../hooks/useReveal.js';
 import useCountUp from '../hooks/useCountUp.js';
 import VenueCard, { VenueCardSkeleton } from '../components/VenueCard.jsx';
-import { SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { SPORT_LABELS } from '../utils/format.js';
 import {
   IconSearch, IconLocate, IconBolt, IconPhone, IconUsers,
   IconChevron, IconArrowRight, IconSparkle,
 } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 // All eight the platform supports. This list used to stop at six, so
 // pickleball and table tennis were bookable but undiscoverable from the
@@ -51,15 +52,43 @@ const SPORT_ACCENT = {
  * that as well as looking at it. `compact` marks the ones that survive below
  * 1080px, where there is only room for a few.
  */
+/**
+ * The floating tiles beside the headline.
+ *
+ * They are LINKS, not decoration. Eight sports floating next to a search box
+ * look clickable whether or not they are, so a visitor who reaches for one
+ * and gets nothing has been told the hero is a picture. They go where the
+ * chips below go.
+ *
+ * All one size. Varying them read as inconsistency rather than as depth, and
+ * a link smaller than its neighbours is a smaller tap target for no reason a
+ * user can see.
+ *
+ * SCATTERED, deliberately. The first pass alternated left-right down two
+ * columns at even intervals, which the eye reads as a grid with a wobble
+ * rather than as confetti — a pattern you notice is worse than no pattern.
+ * So the vertical gaps are uneven (6, 11, 9, 15, 5, 19, 12) and no two
+ * neighbours share a column. Tilts run wider for the same reason.
+ *
+ * `bg` is a literal, not a token. Two of the accents (violet, success) shift
+ * between light and dark, and the hero gradient is dark in BOTH — so pinning
+ * them keeps the corner identical either way rather than re-tinting for a
+ * theme change nobody can see behind it.
+ *
+ * Every position still sits in the right-hand column, clear of the copy and
+ * the chips — see the note on .hero-sports in app.css for why that exists.
+ * Anything past about 34% starts crowding the headline at the 1200px
+ * breakpoint, so that is the practical left edge.
+ */
 const HERO_BLOBS = [
-  { sport: 'football',   top: '8%',  right: '6%',  tilt: '-10deg', bg: 'var(--surface)', dur: '6s',   delay: '0s',   compact: true },
-  { sport: 'basketball', top: '30%', right: '17%', tilt: '7deg',   bg: 'var(--orange)',  dur: '7.2s', delay: '.5s',  compact: true },
-  { sport: 'cricket',    top: '52%', right: '4%',  tilt: '-6deg',  bg: 'var(--volt)',    dur: '6.6s', delay: '1.1s', compact: true },
-  { sport: 'badminton',  top: '80%', right: '13%', tilt: '11deg',  bg: 'var(--magenta)', dur: '7.8s', delay: '.3s' },
-  { sport: 'tennis',     top: '18%', right: '28%', tilt: '5deg',   bg: 'var(--sky)',     dur: '6.9s', delay: '1.6s' },
-  { sport: 'pickleball', top: '86%', right: '9%',  tilt: '-13deg', bg: 'var(--success)', dur: '7.4s', delay: '.9s' },
-  { sport: 'volleyball', top: '44%', right: '33%', tilt: '-4deg',  bg: 'var(--violet)',  dur: '6.3s', delay: '2s' },
-  { sport: 'tabletennis',top: '24%', right: '36%', tilt: '9deg',   bg: 'var(--surface)', dur: '7.6s', delay: '1.3s' },
+  { sport: 'football',    top: '5%',  right: '9%',  tilt: '-12deg', bg: '#FFFFFF', dur: '7.5s', delay: '0s'   },
+  { sport: 'basketball',  top: '11%', right: '27%', tilt: '8deg',   bg: '#FF9C3D', dur: '8.4s', delay: '.7s'  },
+  { sport: 'tennis',      top: '22%', right: '4%',  tilt: '-6deg',  bg: '#3DC9FF', dur: '8.1s', delay: '1.9s' },
+  { sport: 'badminton',   top: '31%', right: '19%', tilt: '14deg',  bg: '#FF3E7F', dur: '9s',   delay: '.4s'  },
+  { sport: 'volleyball',  top: '46%', right: '31%', tilt: '-9deg',  bg: '#9B7CFF', dur: '7.2s', delay: '2.3s' },
+  { sport: 'cricket',     top: '51%', right: '8%',  tilt: '5deg',   bg: '#D6FF3F', dur: '7.8s', delay: '1.3s' },
+  { sport: 'pickleball',  top: '70%', right: '24%', tilt: '-15deg', bg: '#3DDC84', dur: '8.7s', delay: '1.1s' },
+  { sport: 'tabletennis', top: '82%', right: '6%',  tilt: '10deg',  bg: '#FFFFFF', dur: '8.9s', delay: '1.6s' },
 ];
 
 // Features, not figures. "15,000+ turfs" was in here too — a number the
@@ -147,12 +176,13 @@ export default function Home() {
         {/* Centre circle and halfway line — see .hero-pitch in app.css. */}
         <div className="hero-pitch" aria-hidden="true" />
 
-        <div className="hero-deco" aria-hidden="true">
+        <div className="hero-deco">
           {HERO_BLOBS.map((b) => (
-            <span
+            <Link
               key={b.sport}
+              to={`/venues?sport=${b.sport}`}
               className="hero-blob"
-              data-compact={b.compact ? '' : undefined}
+              aria-label={`${SPORT_LABELS[b.sport]} venues`}
               style={{
                 '--blob-top': b.top,
                 '--blob-right': b.right,
@@ -162,8 +192,8 @@ export default function Home() {
                 '--blob-delay': b.delay,
               }}
             >
-              {SPORT_ICONS[b.sport]}
-            </span>
+              <SportIcon sport={b.sport} size="62%" />
+            </Link>
           ))}
         </div>
 
@@ -216,7 +246,7 @@ export default function Home() {
                   '--sport-ink': SPORT_ACCENT[s]?.ink,
                 }}
               >
-                <span className="hero-sport-icon">{SPORT_ICONS[s]}</span>
+                <span className="hero-sport-icon"><SportIcon sport={s} size={19} /></span>
                 {SPORT_LABELS[s]}
               </Link>
             ))}

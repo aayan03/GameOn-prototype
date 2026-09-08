@@ -5,8 +5,9 @@ import { useAuth } from '../context/AuthContext.jsx';
 import useGeolocation from '../hooks/useGeolocation.js';
 import useDebounce from '../hooks/useDebounce.js';
 import VenueCard, { VenueCardSkeleton } from '../components/VenueCard.jsx';
-import { SPORT_ICONS, SPORT_LABELS, rupees } from '../utils/format.js';
+import { SPORT_LABELS, rupees } from '../utils/format.js';
 import { IconSearch, IconLocate, IconFilter, IconClose, IconBolt, IconPhone } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball', 'pickleball', 'tabletennis'];
 const AMENITIES = ['parking', 'floodlights', 'washroom', 'changing_room', 'cafeteria', 'equipment_rental', 'shower', 'wifi'];
@@ -162,7 +163,7 @@ export default function Venues() {
             className={`pill${filters.sport === s ? ' active' : ''}`}
             onClick={() => setFilter({ sport: filters.sport === s ? '' : s })}
           >
-            <span className="pill-icon">{SPORT_ICONS[s]}</span> {SPORT_LABELS[s]}
+            <span className="pill-icon"><SportIcon sport={s} size={16} /></span> {SPORT_LABELS[s]}
           </button>
         ))}
       </div>

@@ -7,8 +7,9 @@ import { useToast } from '../context/ToastContext.jsx';
 import Confetti from '../components/Confetti.jsx';
 import CancelModal from '../components/CancelModal.jsx';
 import { prettyDateLong, slotRangeLabel, relativeTime } from '../utils/date.js';
-import { rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { rupees, SPORT_LABELS } from '../utils/format.js';
 import { IconPin, IconPhone, IconArrowLeft, IconCheck, IconClock } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 /** Deterministic pseudo-QR built from the booking reference. No library needed. */
 function QrBlock({ text, size = 21 }) {
@@ -208,7 +209,7 @@ export default function BookingDetail() {
             </div>
             <div className="ticket-field">
               <span>Court</span>
-              <strong>{SPORT_ICONS[booking.sport]} {booking.courtName}</strong>
+              <strong className="row gap-6"><SportIcon sport={booking.sport} size={16} /> {booking.courtName}</strong>
             </div>
             <div className="ticket-field">
               <span>Sport</span>

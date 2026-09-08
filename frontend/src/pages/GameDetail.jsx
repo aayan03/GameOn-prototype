@@ -5,12 +5,13 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
 import VenueMap from '../components/VenueMap.jsx';
-import { SPORT_ICONS, SPORT_LABELS, rupees } from '../utils/format.js';
+import { SPORT_LABELS, rupees } from '../utils/format.js';
 import { prettyDateLong, relativeTime, minuteLabel, localKey } from '../utils/date.js';
 import {
   IconArrowLeft, IconPin, IconClock, IconUsers, IconCheck,
   IconClose, IconSparkle, IconShield,
 } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const TYPE_LABEL = {
   need_players: 'Need players',
@@ -123,7 +124,7 @@ export default function GameDetail() {
         <main className="vd-main">
           <div className="row gap-8 wrap" style={{ marginBottom: 10 }}>
             <span className="badge badge-volt">{TYPE_LABEL[post.type]}</span>
-            <span className="badge badge-soft">{SPORT_ICONS[post.sport]} {SPORT_LABELS[post.sport]}</span>
+            <span className="badge badge-soft"><SportIcon sport={post.sport} size={14} /> {SPORT_LABELS[post.sport]}</span>
             {post.skillLevel !== 'any' && (
               <span className="badge badge-soft" style={{ textTransform: 'capitalize' }}>{post.skillLevel}</span>
             )}

@@ -7,12 +7,13 @@ import useGeolocation from '../hooks/useGeolocation.js';
 import useDebounce from '../hooks/useDebounce.js';
 import CreateGameModal from '../components/CreateGameModal.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
-import { SPORT_ICONS, SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
+import { SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
 import { relativeTime, prettyDate, minuteLabel, localKey } from '../utils/date.js';
 import {
   IconSearch, IconLocate, IconUsers, IconPin, IconClock,
   IconSparkle, IconCheck, IconClose,
 } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
@@ -41,7 +42,7 @@ function GameCard({ post, onJoin, onWithdraw, busy }) {
     <article className="game-card">
       <div className="game-head">
         <span className={`badge ${TYPE_CLASS[post.type]}`}>{TYPE_LABEL[post.type]}</span>
-        <span className="badge badge-soft">{SPORT_ICONS[post.sport]} {SPORT_LABELS[post.sport]}</span>
+        <span className="badge badge-soft"><SportIcon sport={post.sport} size={14} /> {SPORT_LABELS[post.sport]}</span>
         {post.skillLevel !== 'any' && (
           <span className="badge badge-soft" style={{ textTransform: 'capitalize' }}>{post.skillLevel}</span>
         )}
@@ -244,7 +245,7 @@ export default function TeamUp() {
             key={s} className={`pill${filters.sport === s ? ' active' : ''}`}
             onClick={() => setFilter({ sport: filters.sport === s ? '' : s })}
           >
-            <span className="pill-icon">{SPORT_ICONS[s]}</span> {SPORT_LABELS[s]}
+            <span className="pill-icon"><SportIcon sport={s} size={16} /></span> {SPORT_LABELS[s]}
           </button>
         ))}
       </div>

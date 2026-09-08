@@ -3,7 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-le
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, SPORT_ICONS } from '../utils/format.js';
+import { rupees, distanceLabel, } from '../utils/format.js';
+import { sportIconMarkup } from './SportIcon.jsx';
 
 /**
  * Leaflet + OpenStreetMap. Free, no API key, no billing account.
@@ -27,7 +28,7 @@ const TILES = {
 /** Custom pin so markers carry the sport and the brand colour. */
 function makeIcon(sport, isManual) {
   const bg = isManual ? '#FF9C3D' : '#1A1A2E';
-  const glyph = SPORT_ICONS[sport] || '🏟️';
+  const glyph = sportIconMarkup(sport, 19);
   return L.divIcon({
     className: 'gameon-pin-wrap',
     html: `<div class="gameon-pin" style="--pin-bg:${bg}"><span>${glyph}</span></div>`,

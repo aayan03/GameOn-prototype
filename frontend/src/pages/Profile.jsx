@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import useGeolocation from '../hooks/useGeolocation.js';
-import { initials, rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { initials, rupees, SPORT_LABELS } from '../utils/format.js';
 import { IconLocate, IconCheck } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball', 'pickleball', 'tabletennis'];
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'pro'];
@@ -130,7 +131,7 @@ export default function Profile() {
                 className={`pill${form.favoriteSports.includes(s) ? ' active' : ''}`}
                 onClick={() => toggleSport(s)}
               >
-                {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+                <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
               </button>
             ))}
           </div>

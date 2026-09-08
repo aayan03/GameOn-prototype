@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { teamupApi, bookingApi } from '../api/endpoints.js';
 import { useToast } from '../context/ToastContext.jsx';
-import { SPORT_ICONS, SPORT_LABELS, rupees } from '../utils/format.js';
+import { SPORT_LABELS, rupees } from '../utils/format.js';
 import { prettyDate, slotRangeLabel, dateKey } from '../utils/date.js';
 import { IconClose, IconSparkle } from './Icons.jsx';
+import SportIcon from './SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball', 'pickleball', 'tabletennis'];
 const LEVELS = ['any', 'beginner', 'intermediate', 'advanced', 'pro'];
@@ -173,7 +174,7 @@ export default function CreateGameModal({ onClose, onCreated }) {
                       className={`pay-opt${form.bookingRef === b.groupRef ? ' active' : ''}`}
                       onClick={() => pickBooking(b)}
                     >
-                      <span className="pay-icon">{SPORT_ICONS[b.sport]}</span>
+                      <span className="pay-icon"><SportIcon sport={b.sport} size={18} /></span>
                       <span className="grow" style={{ minWidth: 0 }}>
                         <strong style={{ display: 'block' }}>{b.venue?.name}</strong>
                         <span className="text-faint">
@@ -195,7 +196,7 @@ export default function CreateGameModal({ onClose, onCreated }) {
                     className={`pill${form.sport === s ? ' active' : ''}`}
                     onClick={() => set({ sport: s })}
                   >
-                    {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+                    <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
                   </button>
                 ))}
               </div>

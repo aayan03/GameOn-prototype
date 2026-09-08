@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { eventApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { EVENT_TYPE_ICONS, EVENT_TYPE_LABELS, eventWhen, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { EVENT_TYPE_ICONS, EVENT_TYPE_LABELS, eventWhen, SPORT_LABELS } from '../utils/format.js';
 import { IconUsers, IconChevron, IconCheck } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 export default function EventDetail() {
   const { idOrSlug } = useParams();
@@ -142,7 +143,7 @@ export default function EventDetail() {
           {event.sport && (
             <div>
               <span className="fact-label">Sport</span>
-              <strong>{SPORT_ICONS[event.sport]} {SPORT_LABELS[event.sport]}</strong>
+              <strong className="row gap-6"><SportIcon sport={event.sport} size={16} /> {SPORT_LABELS[event.sport]}</strong>
             </div>
           )}
 

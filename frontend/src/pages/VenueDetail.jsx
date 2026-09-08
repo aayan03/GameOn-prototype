@@ -4,9 +4,10 @@ import { venueApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import VenueMap from '../components/VenueMap.jsx';
 import {
-  rupees, SPORT_ICONS, SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, initials, ratingLabel,
+  rupees, SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, initials, ratingLabel,
 } from '../utils/format.js';
 import { IconStar, IconPin, IconBolt, IconPhone, IconHeart, IconCheck, IconChevron } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -90,7 +91,7 @@ export default function VenueDetail() {
           </>
         ) : (
           <div className="vd-hero-img vc-media-fallback" style={{ fontSize: '4rem' }}>
-            {SPORT_ICONS[venue.sports?.[0]] || '🏟️'}
+            <SportIcon sport={venue.sports?.[0]} size={40} />
           </div>
         )}
       </div>
@@ -155,7 +156,7 @@ export default function VenueDetail() {
               <div className="court-list">
                 {venue.courts.filter((c) => c.isActive !== false).map((court) => (
                   <div key={court._id} className="court-row">
-                    <div className="court-icon">{SPORT_ICONS[court.sport]}</div>
+                    <div className="court-icon"><SportIcon sport={court.sport} size={22} /></div>
                     <div className="grow">
                       <strong>{court.name}</strong>
                       <div className="text-faint">

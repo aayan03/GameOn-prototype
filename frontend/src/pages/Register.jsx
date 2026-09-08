@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { authApi } from '../api/endpoints.js';
-import { SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { SPORT_LABELS } from '../utils/format.js';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
@@ -203,7 +204,7 @@ export default function Register() {
                     className={`pill${form.favoriteSports.includes(s) ? ' active' : ''}`}
                     onClick={() => toggleSport(s)}
                   >
-                    {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+                    <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
                   </button>
                 ))}
               </div>

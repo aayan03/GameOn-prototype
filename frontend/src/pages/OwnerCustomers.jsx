@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { ownerApi } from '../api/endpoints.js';
 import { useToast } from '../context/ToastContext.jsx';
 import TierBadge from '../components/TierBadge.jsx';
-import { rupees, initials, SPORT_ICONS } from '../utils/format.js';
+import { rupees, initials } from '../utils/format.js';
 import { IconArrowLeft } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 export default function OwnerCustomers() {
   const toast = useToast();
@@ -58,7 +59,7 @@ export default function OwnerCustomers() {
                       </div>
                     </div>
                   </td>
-                  <td>{(c.sports || []).map((s) => SPORT_ICONS[s] || '').join(' ')}</td>
+                  <td><span className="row gap-4">{(c.sports || []).map((s) => <SportIcon key={s} sport={s} size={15} />)}</span></td>
                   <td className="num">{c.bookings}</td>
                   <td className="num">{c.slots}</td>
                   <td className="num">{rupees(c.spend)}</td>

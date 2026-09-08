@@ -5,11 +5,12 @@ import { openCheckout, TEST_CARDS } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { dateStrip, prettyDate } from '../utils/date.js';
-import { rupees, SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { rupees, SPORT_LABELS } from '../utils/format.js';
 import {
   IconArrowLeft, IconBolt, IconPhone, IconClock, IconPin,
   IconWallet, IconSparkle, IconClose, IconCheck, IconShield,
 } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const STEPS = ['Pick slots', 'Review', 'Confirm'];
 
@@ -268,7 +269,7 @@ export default function BookSlot() {
                         className={`court-tab${courtId === c.courtId ? ' active' : ''}`}
                         onClick={() => setCourtId(c.courtId)}
                       >
-                        <span style={{ fontSize: '1.3rem' }}>{SPORT_ICONS[c.sport]}</span>
+                        <SportIcon sport={c.sport} size={22} />
                         <span>
                           <span className="court-tab-name">{c.name}</span>
                           <span className="court-tab-meta">
@@ -515,7 +516,7 @@ export default function BookSlot() {
             <div className="summary-head">
               <div className="between">
                 <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.05rem' }}>Your booking</strong>
-                {court && <span className="badge badge-soft">{SPORT_ICONS[court.sport]} {court.name}</span>}
+                {court && <span className="badge badge-soft"><SportIcon sport={court.sport} size={14} /> {court.name}</span>}
               </div>
               <p style={{ fontSize: '.86rem', fontWeight: 700, marginTop: 4 }}>{prettyDate(date)}</p>
             </div>

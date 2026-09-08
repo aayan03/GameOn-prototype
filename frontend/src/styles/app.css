@@ -496,24 +496,46 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 /* Floating sport stickers scattered behind the copy */
 .hero-deco { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
 .hero-blob {
-  position: absolute; display: grid; place-items: center;
-  width: 76px; height: 76px; border-radius: 24px;
-  background: var(--surface); border: var(--bw-fat) solid var(--stroke);
-  box-shadow: var(--sh); font-size: 2rem;
-}
-/* Position, tilt, colour and float timing all come from the component as
-   custom properties. It used to be three hardcoded `nth-child` rules, which
-   meant adding a fourth sport was a CSS edit in three separate media queries
-   — so the hero showed three of the eight sports the platform actually
-   supports. */
-.hero-blob {
+  position: absolute;
+  display: grid; place-items: center;
+  width: 72px; height: 72px;
+  border-radius: 26%;
+  /*
+    A colour per sport, passed in from the component, and an ink border —
+    the sticker language the rest of the site uses.
+
+    Fixed values rather than theme tokens: the hero gradient is dark in both
+    themes, so a themed surface sank into it in dark mode, and two of the
+    accents shift between themes for a background nobody can see change.
+  */
+  background: var(--blob-bg, #FFFFFF);
+  border: var(--bw) solid #16162B;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .38);
   top: var(--blob-top);
   right: var(--blob-right);
   transform: rotate(var(--blob-tilt, 0deg));
-  background: var(--blob-bg, var(--surface));
   animation: float var(--blob-dur, 6s) ease-in-out var(--blob-delay, 0s) infinite;
+  /* The deco layer stays click-through so it never eats a drag across the
+     hero; the tiles opt back in, because each one is a link to that sport. */
+  pointer-events: auto;
+  transition: box-shadow .18s var(--snap), border-color .18s var(--snap);
 }
-@media (max-width: 1080px) { .hero-deco { display: none; } }
+/*
+  Hover lifts without moving. `transform` already carries the tilt AND the
+  float keyframes, so touching it here would fight both — the shadow does the
+  work, and the float pauses so the pointer is not chasing a moving target.
+*/
+.hero-blob:hover, .hero-blob:focus-visible {
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, .5);
+  animation-play-state: paused;
+  z-index: 3;
+}
+
+/* 1200, not 1080. The tiles need a genuinely wide viewport to sit clear of
+   the headline — measured at 1100px the basketball tile landed on top of
+   "Your next game is". Below this the hero is copy and search only, which is
+   the part that matters anyway. */
+@media (max-width: 1200px) { .hero-deco { display: none; } }
 
 .hero-eyebrow {
   display: inline-flex; align-items: center; gap: 8px;
@@ -557,7 +579,17 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 }
 .hero-locate:hover:not(:disabled) { transform: translate(-1px,-1px) rotate(-12deg); box-shadow: var(--sh-sm); }
 
-.hero-sports { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+/*
+  Capped to match .hero-search directly above it. Left unbounded, the eight
+  chips straggled the full width of the container and the last one — Pickleball
+  at 1440px — sat underneath a floating tile. The two were positioned by
+  different rules with nothing making them agree. Now the copy, the search box
+  and the chips share one left column and the tiles get the right one.
+*/
+.hero-sports {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px;
+  max-width: 660px;
+}
 .hero-sport {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 10px 18px; border-radius: 99px;
@@ -1833,17 +1865,10 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
    every phone — i.e. for most visitors. They are repositioned and
    shrunk instead, and only the third is dropped, because three of them
    genuinely will not fit beside the copy on a phone. */
-@media (max-width: 1080px) {
-  /* Smaller, and only the ones flagged `data-compact` survive — eight
-     stickers fit beside a 4.6rem headline on a desktop and nowhere else. */
-  .hero-blob { width: 54px; height: 54px; border-radius: 17px; font-size: 1.45rem; opacity: .92; }
-  .hero-blob:not([data-compact]) { display: none; }
-}
-@media (max-width: 720px) {
-  .hero-blob { width: 42px; height: 42px; border-radius: 13px; font-size: 1.1rem; box-shadow: var(--sh-xs); opacity: .8; }
-  /* Down to two on a phone, tucked into the corner above the copy. */
-  .hero-blob:nth-of-type(n+3) { display: none; }
-}
+/* Nothing here for .hero-blob any more: .hero-deco is display:none below
+   1080px, so every rule that shrank or hid individual tiles at these widths
+   was unreachable — and they keyed off a `data-compact` attribute the markup
+   stopped setting when the tiles became links. */
 
 /* ── 3. A colour per sport ──────────────────────────────────────
    Six pills that all hovered to the same lime, next to five accent

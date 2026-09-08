@@ -4,8 +4,9 @@ import { venueApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import useGeolocation from '../hooks/useGeolocation.js';
-import { SPORT_ICONS, SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, rupees } from '../utils/format.js';
+import { SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, rupees } from '../utils/format.js';
 import { IconArrowLeft, IconTrash, IconLocate, IconBolt, IconPhone, IconCheck } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 /**
  * Listing a venue.
@@ -475,7 +476,7 @@ export default function OwnerVenueNew() {
                       className={`pill${court.sport === s ? ' active' : ''}`}
                       onClick={() => setCourt(i, { sport: s })}
                     >
-                      {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+                      <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
                     </button>
                   ))}
                 </div>

@@ -3,8 +3,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ownerApi } from '../api/endpoints.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { dateStrip, prettyDate } from '../utils/date.js';
-import { rupees, SPORT_ICONS } from '../utils/format.js';
+import { rupees } from '../utils/format.js';
 import { IconArrowLeft, IconRefresh } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 export default function OwnerCalendar() {
   const [params, setParams] = useSearchParams();
@@ -132,7 +133,7 @@ export default function OwnerCalendar() {
       ) : data?.courts?.map((court) => (
         <section key={court.courtId} className="cal-court" style={{ marginTop: 24 }}>
           <div className="cal-head">
-            <h3>{SPORT_ICONS[court.sport]} {court.courtName}</h3>
+            <h3 className="row gap-8"><SportIcon sport={court.sport} size={18} /> {court.courtName}</h3>
             <span className="text-faint">
               {court.closed ? 'Closed today' : `Open ${court.opens} – ${court.closes} · ${rupees(court.pricePerHour)}/hr`}
             </span>

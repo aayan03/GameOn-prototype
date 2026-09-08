@@ -4,8 +4,9 @@ import { teamApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
-import { SPORT_ICONS, SPORT_LABELS } from '../utils/format.js';
+import { SPORT_LABELS } from '../utils/format.js';
 import { IconUsers, IconClose, IconCheck, IconSparkle, IconTrash } from '../components/Icons.jsx';
+import SportIcon from '../components/SportIcon.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 const LEVELS = ['beginner', 'intermediate', 'advanced', 'pro'];
@@ -58,7 +59,7 @@ function CreateTeamModal({ onClose, onCreated }) {
                   <button key={s} type="button"
                     className={`pill${form.sport === s ? ' active' : ''}`}
                     onClick={() => setForm({ ...form, sport: s })}>
-                    {SPORT_ICONS[s]} {SPORT_LABELS[s]}
+                    <SportIcon sport={s} size={16} /> {SPORT_LABELS[s]}
                   </button>
                 ))}
               </div>
@@ -104,7 +105,7 @@ function TeamCard({ team, onInvite, onLeave, busy }) {
     <div className="card card-pad team-card">
       <div className="between gap-12 wrap">
         <div className="row gap-12">
-          <div className="team-crest">{SPORT_ICONS[team.sport]}</div>
+          <div className="team-crest"><SportIcon sport={team.sport} size={30} /></div>
           <div>
             <div className="row gap-8 wrap">
               <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.1rem' }}>{team.name}</strong>
