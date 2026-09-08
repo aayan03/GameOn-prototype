@@ -6,8 +6,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import VenueMap from '../components/VenueMap.jsx';
 import SportIcon from '../components/SportIcon.jsx';
 import {
-  SPORT_LABELS, PLAYGROUND_FACILITY_LABELS, SURFACE_LABELS, accessLabel, initials,
-} from '../utils/format.js';
+  SPORT_LABELS, PLAYGROUND_FACILITY_LABELS, SURFACE_LABELS, accessLabel, initials, directionsUrl } from '../utils/format.js';
 import { IconChevron, IconLocate, IconPin, IconInfo } from '../components/Icons.jsx';
 
 export default function PlaygroundDetail() {
@@ -79,9 +78,11 @@ export default function PlaygroundDetail() {
 
   const [lng, lat] = pg.location?.coordinates || [];
   const hasCoords = typeof lat === 'number' && typeof lng === 'number';
-  const directions = hasCoords
-    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
-    : null;
+  // Name first, coordinates as the fallback — an unclaimed listing's pin is
+  // approximate, but "Nehru Community Ground, Gomti Nagar" still gets you there.
+  const directions = directionsUrl({
+    name: pg.name, area: pg.address?.area, city: pg.address?.city, lat, lng,
+  });
   const address = [pg.address?.line1, pg.address?.area, pg.address?.city, pg.address?.pincode]
     .filter(Boolean).join(', ');
 
@@ -109,7 +110,16 @@ export default function PlaygroundDetail() {
         <div className="between gap-14 wrap" style={{ alignItems: 'flex-start' }}>
           <div>
             <h1>{pg.name}</h1>
-            {address && <p className="text-soft" style={{ marginTop: 6 }}>{address}</p>}
+            {address && (
+              <p style={{ marginTop: 6 }}>
+                <a
+                  className="addr-link" href={directions || undefined}
+                  target="_blank" rel="noreferrer"
+                >
+                  <IconPin style={{ width: 14, height: 14 }} /> {address}
+                </a>
+              </p>
+            )}
           </div>
           <span className="badge badge-free big">Free to use</span>
         </div>

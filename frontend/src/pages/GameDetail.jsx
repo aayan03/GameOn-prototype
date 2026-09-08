@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
 import VenueMap from '../components/VenueMap.jsx';
-import { SPORT_LABELS, rupees } from '../utils/format.js';
+import { SPORT_LABELS, rupees, directionsUrl } from '../utils/format.js';
 import { prettyDateLong, relativeTime, minuteLabel, localKey } from '../utils/date.js';
 import {
   IconArrowLeft, IconPin, IconClock, IconUsers, IconCheck,
@@ -158,6 +158,22 @@ export default function GameDetail() {
                 <strong>{post.venue?.name || post.proposedArea || 'To be decided'}</strong>
                 {post.venue?.address && (
                   <span className="text-faint"> {[post.venue.address.area, post.venue.address.city].filter(Boolean).join(', ')}</span>
+                )}
+                {/* You have agreed to meet somewhere; getting there should not
+                    mean copying a name into another app. Only shown when there
+                    is somewhere real to go — "To be decided" has no directions. */}
+                {(post.venue?.name || post.proposedArea) && (
+                  <a
+                    className="addr-link" style={{ display: 'inline-block', marginTop: 4 }}
+                    href={directionsUrl({
+                      name: post.venue?.name,
+                      area: post.venue?.address?.area || post.proposedArea,
+                      city: post.venue?.address?.city,
+                    })}
+                    target="_blank" rel="noreferrer"
+                  >
+                    Directions
+                  </a>
                 )}
               </div>
             </div>

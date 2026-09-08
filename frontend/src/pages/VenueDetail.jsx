@@ -4,8 +4,7 @@ import { venueApi } from '../api/endpoints.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import VenueMap from '../components/VenueMap.jsx';
 import {
-  rupees, SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, initials, ratingLabel,
-} from '../utils/format.js';
+  rupees, SPORT_LABELS, AMENITY_LABELS, AMENITY_ICONS, initials, ratingLabel, directionsUrl } from '../utils/format.js';
 import { IconStar, IconPin, IconBolt, IconPhone, IconHeart, IconCheck, IconChevron } from '../components/Icons.jsx';
 import SportIcon from '../components/SportIcon.jsx';
 
@@ -117,10 +116,20 @@ export default function VenueDetail() {
                 </div>
                 <h1 style={{ fontSize: '2.1rem' }}>{venue.name}</h1>
                 <div className="row gap-8 wrap" style={{ marginTop: 10, color: 'var(--text-soft)' }}>
-                  <span className="row gap-4">
+                  {/* The address IS the directions link — that is what people
+                      reach for. Free: a Maps URL, not the Maps API. */}
+                  <a
+                    className="row gap-4 addr-link"
+                    href={directionsUrl({
+                      name: venue.name,
+                      area: venue.address?.area,
+                      city: venue.address?.city,
+                    })}
+                    target="_blank" rel="noreferrer"
+                  >
                     <IconPin style={{ width: 15, height: 15 }} />
                     {[venue.address?.line1, venue.address?.area, venue.address?.city].filter(Boolean).join(', ')}
-                  </span>
+                  </a>
                   {venue.rating > 0 && (
                     <span className="row gap-4">
                       <IconStar filled style={{ width: 15, height: 15, color: 'var(--orange)' }} />

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, SPORT_LABELS, srcSetFor } from '../utils/format.js';
+import { rupees, distanceLabel, SPORT_LABELS, srcSetFor, directionsUrl } from '../utils/format.js';
 import { IconStar, IconPin, IconBolt, IconPhone, IconHeart } from './Icons.jsx';
 import SportIcon from './SportIcon.jsx';
 
@@ -53,10 +53,27 @@ export default function VenueCard({ venue, onToggleFavorite, isFavorite }) {
           )}
         </div>
 
-        <div className="vc-meta">
+        {/*
+          Tapping an address should open directions — that is what people
+          expect of an address, and it costs nothing: a Maps URL, not the
+          Maps API. Safe as an <a> here because this card is an <article>
+          with separate links rather than one link wrapping everything;
+          nesting an anchor inside a Link would be invalid.
+        */}
+        <a
+          className="vc-meta vc-meta-link"
+          href={directionsUrl({
+            name: venue.name,
+            area: venue.address?.area,
+            city: venue.address?.city,
+          })}
+          target="_blank" rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={`Directions to ${venue.name}`}
+        >
           <IconPin style={{ width: 14, height: 14, flexShrink: 0 }} />
           <span>{[venue.address?.area, venue.address?.city].filter(Boolean).join(', ') || 'Location not set'}</span>
-        </div>
+        </a>
 
         <div className="vc-sports">
           {(venue.sports || []).slice(0, 4).map((s) => (

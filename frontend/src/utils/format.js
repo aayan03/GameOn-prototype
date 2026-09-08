@@ -139,3 +139,35 @@ export function srcSetFor(url, widths = [400, 600, 900, 1200]) {
     })
     .join(', ');
 }
+
+/**
+ * A link into Google Maps for directions.
+ *
+ * This is the Maps URLs format, NOT the Maps Platform API — no key, no
+ * billing account, no quota, and Google documents it as stable. We are
+ * sending the user to Google rather than embedding Google's data, which is
+ * why none of the per-request pricing applies. On a phone it deep-links
+ * into the native app with navigation ready to start.
+ *
+ * Prefers a NAME over coordinates when one is given. A driver arriving at
+ * "Turf Nation, Koramangala" gets a recognisable destination card; the same
+ * place as `12.93,77.62` is a pin in a field, and if our coordinates are
+ * slightly off — every unclaimed listing's are — the name still gets them
+ * there while the pin quietly does not.
+ */
+export function directionsUrl({ name, area, city, lat, lng } = {}) {
+  const label = [name, area, city].filter(Boolean).join(', ');
+  if (label) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(label)}`;
+  }
+  if (typeof lat === 'number' && typeof lng === 'number') {
+    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  }
+  return null;
+}
+
+/** The same place, shown rather than navigated to. */
+export function mapSearchUrl({ lat, lng } = {}) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}

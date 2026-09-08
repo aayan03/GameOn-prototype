@@ -2183,3 +2183,14 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
   display: grid; place-items: center; color: var(--ink);
   border: var(--bw-thin) solid var(--stroke);
 }
+
+/* An address that opens directions. Underlined on hover rather than always,
+   so a card does not look like a wall of links, but it keeps the pointer and
+   the focus ring so it is discoverable by keyboard too. */
+.addr-link {
+  color: inherit; text-decoration: none;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.addr-link:hover { color: var(--violet); text-decoration: underline; }
+.vc-meta-link { text-decoration: none; }
+.vc-meta-link:hover { color: var(--violet); text-decoration: underline; }

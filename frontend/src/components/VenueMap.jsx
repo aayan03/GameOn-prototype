@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-le
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, srcSetFor } from '../utils/format.js';
+import { rupees, distanceLabel, srcSetFor, directionsUrl } from '../utils/format.js';
 import { sportIconMarkup } from './SportIcon.jsx';
 
 /**
@@ -154,9 +154,19 @@ export default function VenueMap({
                   {typeof pin.distanceKm === 'number' && (
                     <div className="text-faint">{distanceLabel(pin.distanceKm)}</div>
                   )}
+                  {/* Somebody reading a pin is deciding whether to travel, so
+                      the way to get there belongs here rather than one page
+                      deeper. Free — this is a Maps URL, not the Maps API. */}
+                  <a
+                    href={directionsUrl({ name: pin.name, area: pin.area, city: pin.city, lat: pin.lat, lng: pin.lng })}
+                    target="_blank" rel="noreferrer"
+                    className="btn btn-ghost btn-sm btn-block" style={{ marginTop: 8 }}
+                  >
+                    Directions
+                  </a>
                   <Link
                     to={`${pin.kind === 'playground' ? '/playgrounds' : '/venues'}/${pin.slug || pin.id}`}
-                    className="btn btn-primary btn-sm btn-block" style={{ marginTop: 8 }}
+                    className="btn btn-primary btn-sm btn-block" style={{ marginTop: 6 }}
                   >
                     {pin.kind === 'playground' ? 'View ground' : 'View venue'}
                   </Link>
