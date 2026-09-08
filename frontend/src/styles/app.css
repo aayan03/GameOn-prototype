@@ -363,6 +363,23 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 .chip-row::-webkit-scrollbar { display: none; }
 .chip-row > * { scroll-snap-align: start; }
 
+/*
+  Wrap once there is room, rather than scroll.
+
+  A horizontal scroller with the scrollbar hidden is a TOUCH pattern — you
+  swipe it, and the half-visible chip at the edge tells you to. With a mouse
+  there is no scrollbar, no swipe and no hint, so it just reads as clipped:
+  the event-type row overflowed its container by 53px at 1440px and cut the
+  "Other" chip in half with nothing to suggest it could be reached.
+*/
+@media (min-width: 721px) {
+  .chip-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    6. FORMS
    ═══════════════════════════════════════════════════════════════ */
@@ -1777,8 +1794,18 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
   font-size: .9rem; font-weight: 600;
   animation: slideDown .35s var(--spring) both;
 }
+/*
+  Both bars are a bright accent, so the text on them is dark — stated, not
+  inherited. Inheriting `--text` meant near-white lettering on lime the
+  moment dark mode was on, which is how the install prompt became
+  unreadable on both Android and iOS.
+*/
+.app-bar.update,
+.app-bar.install { color: var(--ink); }
 .app-bar.update { background: var(--sky); }
 .app-bar.install { background: var(--volt); }
+/* The dismiss button inherits, so it needs the same. */
+.app-bar .icon-btn.bare { color: var(--ink); }
 @keyframes slideDown { from { transform: translateY(-100%); } to { transform: none; } }
 @media (max-width: 560px) {
   .app-bar { font-size: .84rem; padding-inline: 14px; gap: 8px; }
