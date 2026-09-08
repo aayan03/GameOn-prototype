@@ -17,6 +17,7 @@ const notificationSchema = new mongoose.Schema(
         'teamup_request', 'teamup_accepted', 'teamup_declined', 'teamup_filled',
         'team_invite',
         'venue_approved', 'venue_rejected',
+        'playground_approved', 'playground_rejected', 'playground_submitted',
         'payout_ready', 'tier_upgraded', 'review_request',
       ],
       index: true,

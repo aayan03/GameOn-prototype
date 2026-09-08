@@ -354,3 +354,29 @@ function escapeHtml(s) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 }
+
+/**
+ * A ground is waiting to be reviewed.
+ *
+ * In-app notifications only reach an admin who opens the app. A contributor
+ * was told "usually within a day"; keeping that promise means reaching
+ * somebody who is not looking. Plain and short — it is a nudge to go and
+ * look, not the review itself, and it deliberately carries no photo or map
+ * because the queue is where the checking happens.
+ */
+export function playgroundSubmittedEmail({ name, ground, city, submitter, url }) {
+  const where = city ? ` in ${city}` : '';
+  return {
+    subject: `New free ground to review: ${ground}`,
+    text: [
+      `Hi ${name || 'there'},`,
+      '',
+      `${submitter} submitted "${ground}"${where} as a free public ground.`,
+      'It is not visible to anybody until you approve it.',
+      '',
+      `Review it here: ${url}`,
+      '',
+      '— GameOn',
+    ].join('\n'),
+  };
+}

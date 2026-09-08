@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { venueApi } from '../api/endpoints.js';
+import { venueApi, playgroundApi } from '../api/endpoints.js';
 import useGeolocation from '../hooks/useGeolocation.js';
 import VenueMap from '../components/VenueMap.jsx';
 import { SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
@@ -14,6 +14,10 @@ export default function MapView() {
   const [params, setParams] = useSearchParams();
   const { coords, request, isLoading: locating, error: geoError } = useGeolocation();
   const [pins, setPins] = useState([]);
+  // Free grounds are opt-OUT: the most useful thing this map can show
+  // somebody is a free option next to the paid ones.
+  const [showFree, setShowFree] = useState(true);
+  const [freePins, setFreePins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
 
@@ -36,6 +40,35 @@ export default function MapView() {
     return () => { cancelled = true; };
   }, [sport, nearMe, coords, radiusKm]);
 
+  useEffect(() => {
+    let cancelled = false;
+    playgroundApi
+      .list({
+        sport: sport || undefined,
+        lat: nearMe ? coords?.lat : undefined,
+        lng: nearMe ? coords?.lng : undefined,
+        radiusKm: nearMe ? radiusKm : undefined,
+        limit: 50,
+      })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setFreePins(data
+          .filter((p) => p.location?.coordinates)
+          .map((p) => ({
+            id: p._id, name: p.name, slug: p.slug, kind: 'playground',
+            lat: p.location.coordinates[1], lng: p.location.coordinates[0],
+            area: p.address?.area || '', city: p.address?.city || '',
+            sports: p.sports || [], startingPrice: 0, rating: 0,
+            distanceKm: p.distanceKm,
+          })));
+      })
+      // Silent: the venue map is the main job and must not fail with it.
+      .catch(() => { if (!cancelled) setFreePins([]); });
+    return () => { cancelled = true; };
+  }, [sport, nearMe, coords, radiusKm]);
+
+  const allPins = showFree ? [...pins, ...freePins] : pins;
+
   const setParam = (k, v) => {
     const next = new URLSearchParams(params);
     if (!v) next.delete(k); else next.set(k, v);
@@ -51,6 +84,17 @@ export default function MapView() {
     <div className="map-page fade-in">
       <div className="map-toolbar">
         <div className="container row gap-8 wrap" style={{ padding: '12px 20px' }}>
+          {/* Free grounds are on by default and can be turned off — the pin
+              colour already distinguishes them, so this is for someone who
+              only wants places they can actually reserve. */}
+          <button
+            className={`pill${showFree ? ' active' : ''}`}
+            onClick={() => setShowFree((v) => !v)}
+            aria-pressed={showFree}
+          >
+            <span className="free-dot" aria-hidden="true" /> Free grounds
+          </button>
+          <span className="nav-group-divider" aria-hidden="true" />
           <button className={`pill${!sport ? ' active' : ''}`} onClick={() => setParam('sport', '')}>All sports</button>
           {SPORTS.map((s) => (
             <button key={s} className={`pill${sport === s ? ' active' : ''}`} onClick={() => setParam('sport', sport === s ? '' : s)}>
@@ -73,9 +117,9 @@ export default function MapView() {
 
       <div className="map-stage">
         <VenueMap
-          pins={pins}
+          pins={allPins}
           userCoords={nearMe ? coords : null}
-          fitPins={!nearMe && pins.length > 0}
+          fitPins={!nearMe && allPins.length > 0}
           center={nearMe && coords ? [coords.lat, coords.lng] : undefined}
           zoom={nearMe ? 13 : 11}
           radiusKm={nearMe ? radiusKm : null}
@@ -84,7 +128,12 @@ export default function MapView() {
         />
 
         <div className="map-count">
-          {loading ? 'Loading venues…' : `${pins.length} venue${pins.length === 1 ? '' : 's'} on the map`}
+          {loading
+            ? 'Loading venues…'
+            : `${pins.length} venue${pins.length === 1 ? '' : 's'}`
+              + (showFree && freePins.length
+                ? ` · ${freePins.length} free ground${freePins.length === 1 ? '' : 's'}`
+                : '')}
         </div>
 
         {selected && (

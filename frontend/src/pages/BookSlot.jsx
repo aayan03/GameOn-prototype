@@ -239,7 +239,7 @@ export default function BookSlot() {
       </div>
 
       <div className="booking-layout">
-        <main>
+        <div className="bs-main">
           {step === 0 && (
             <>
               {/* Date strip */}
@@ -508,7 +508,7 @@ export default function BookSlot() {
               </div>
             </div>
           )}
-        </main>
+        </div>
 
         {/* ── Sticky summary ───────────────────────────────────── */}
         <aside>

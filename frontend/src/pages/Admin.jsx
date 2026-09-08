@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { adminApi } from '../api/endpoints.js';
+import { adminApi, playgroundApi } from '../api/endpoints.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { StatTile } from '../components/Charts.jsx';
 import { rupees, initials } from '../utils/format.js';
+import SportIcon from '../components/SportIcon.jsx';
+import { SPORT_LABELS, PLAYGROUND_FACILITY_LABELS, accessLabel } from '../utils/format.js';
 import { IconCheck, IconClose, IconRefresh, IconShield, IconPin } from '../components/Icons.jsx';
 
 const TABS = [
-  { k: 'queue', label: 'Moderation' },
+  { k: 'queue', label: 'Venues' },
+  // Community submissions are moderated separately from venues: a free park
+  // and a business taking bookings are different decisions with different
+  // risks, and mixing them in one list invites reviewing them the same way.
+  { k: 'grounds', label: 'Free grounds' },
   { k: 'users', label: 'Users' },
   { k: 'money', label: 'Money' },
 ];
@@ -19,6 +25,7 @@ export default function Admin() {
   const [status, setStatus] = useState('pending');
   const [users, setUsers] = useState([]);
   const [ledger, setLedger] = useState([]);
+  const [grounds, setGrounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
 
@@ -29,6 +36,7 @@ export default function Admin() {
   const load = useCallback(() => {
     setLoading(true);
     const job = tab === 'queue' ? adminApi.venues({ status }).then(({ data }) => setVenues(data))
+      : tab === 'grounds' ? playgroundApi.queue(status).then(({ data }) => setGrounds(data))
       : tab === 'users' ? adminApi.users({}).then(({ data }) => setUsers(data))
       : adminApi.ledger().then(({ data }) => setLedger(data));
     job.catch((e) => toast.error(e.message)).finally(() => setLoading(false));
@@ -43,6 +51,44 @@ export default function Admin() {
       const { data } = await adminApi.moderate(venue._id, decision);
       toast.success(data.message);
       load(); loadStats();
+    } catch (e) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
+  /**
+   * Approve or reject a community-submitted ground.
+   *
+   * A rejection note is required, and not for tidiness: the contributor is
+   * told the outcome, and "no" with no reason is the fastest way to lose
+   * somebody who was doing you a favour.
+   */
+  const moderateGround = async (pg, decision) => {
+    let note = '';
+    if (decision === 'reject') {
+      // eslint-disable-next-line no-alert
+      note = window.prompt(`Why is "${pg.name}" not going on the map?\nThis is sent to whoever added it.`) || '';
+      if (!note.trim()) return;
+    }
+    setBusy(pg._id);
+    try {
+      const { data } = await playgroundApi.moderate(pg._id, decision, note.trim());
+      toast.success(data.message);
+      load();
+    } catch (e) { toast.error(e.message); }
+    finally { setBusy(null); }
+  };
+
+  /** Pull a live ground. The contributor is told, with the reason. */
+  const unpublishGround = async (pg) => {
+    // eslint-disable-next-line no-alert
+    const note = window.prompt(`Why is "${pg.name}" coming off the map?
+This is sent to whoever added it.`) || '';
+    if (!note.trim()) return;
+    setBusy(pg._id);
+    try {
+      const { data } = await playgroundApi.unpublish(pg._id, note.trim());
+      toast.success(data.message);
+      load();
     } catch (e) { toast.error(e.message); }
     finally { setBusy(null); }
   };
@@ -189,6 +235,127 @@ export default function Admin() {
               <p className="text-soft" style={{ marginTop: 8 }}>
                 {status === 'pending' ? 'The moderation queue is clear.' : 'No venues match this filter.'}
               </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Community grounds ───────────────────────────────── */}
+      {tab === 'grounds' && (
+        <>
+          <div className="row gap-8 wrap" style={{ marginBottom: 16 }}>
+            {['pending', 'approved', 'rejected', 'all'].map((sv) => (
+              <button key={sv} className={`pill${status === sv ? ' active' : ''}`}
+                      onClick={() => setStatus(sv)} style={{ textTransform: 'capitalize' }}>
+                {sv}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="skeleton" style={{ height: 240 }} />
+          ) : !grounds.length ? (
+            <div className="card card-pad empty">
+              <div className="empty-icon">🌳</div>
+              <h3>Nothing {status === 'all' ? 'submitted' : status} right now</h3>
+              <p className="text-soft" style={{ marginTop: 8 }}>
+                Free grounds added by players land here for review before they go on the map.
+              </p>
+            </div>
+          ) : (
+            <div className="stack gap-12">
+              {grounds.map((pg) => {
+                const [lng, lat] = pg.location?.coordinates || [];
+                return (
+                  <div key={pg._id} className="card card-pad">
+                    <div className="between gap-14 wrap" style={{ alignItems: 'flex-start' }}>
+                      <div className="grow" style={{ minWidth: 0 }}>
+                        <div className="row gap-8 wrap">
+                          <strong style={{ fontFamily: 'Outfit, sans-serif', fontSize: '1.05rem' }}>{pg.name}</strong>
+                          {pg.reportCount > 0 && (
+                            <span className="badge badge-danger">{pg.reportCount} reports</span>
+                          )}
+                        </div>
+
+                        <p className="text-soft" style={{ marginTop: 4, fontSize: '.9rem' }}>
+                          <IconPin style={{ width: 13, height: 13, verticalAlign: '-2px' }} />{' '}
+                          {[pg.address?.line1, pg.address?.area, pg.address?.city]
+                            .filter(Boolean).join(', ') || 'No address given'}
+                        </p>
+
+                        {pg.description && (
+                          <p className="text-soft" style={{ marginTop: 8, fontSize: '.92rem' }}>{pg.description}</p>
+                        )}
+
+                        <div className="row gap-6 wrap" style={{ marginTop: 10 }}>
+                          {pg.sports?.map((sp) => (
+                            <span key={sp} className="game-chip">
+                              <SportIcon sport={sp} size={12} /> {SPORT_LABELS[sp] || sp}
+                            </span>
+                          ))}
+                          {pg.facilities?.map((f) => (
+                            <span key={f} className="badge badge-soft">
+                              {PLAYGROUND_FACILITY_LABELS[f] || f}
+                            </span>
+                          ))}
+                        </div>
+
+                        <p className="text-faint" style={{ marginTop: 10, fontSize: '.85rem' }}>
+                          {accessLabel(pg.access)}
+                          {pg.access?.notes && ` · ${pg.access.notes}`}
+                        </p>
+
+                        <p className="text-faint" style={{ marginTop: 6, fontSize: '.85rem' }}>
+                          Submitted by {pg.submittedBy?.name || 'unknown'}
+                          {pg.submittedBy?.email && ` (${pg.submittedBy.email})`}
+                        </p>
+
+                        {/*
+                          There are no photos, so the map pin IS the check —
+                          it is the only way to tell a real park from an
+                          address somebody typed.
+                        */}
+                        {typeof lat === 'number' && (
+                          <a
+                            className="link-btn"
+                            style={{ marginTop: 8, display: 'inline-block', fontSize: '.86rem' }}
+                            href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
+                            target="_blank" rel="noreferrer"
+                          >
+                            Check this spot on a map →
+                          </a>
+                        )}
+                      </div>
+
+                      {pg.moderationStatus === 'pending' ? (
+                        <div className="row gap-8 wrap">
+                          <button className="btn btn-primary btn-sm" disabled={busy === pg._id}
+                                  onClick={() => moderateGround(pg, 'approve')}>
+                            <IconCheck style={{ width: 14, height: 14 }} /> Approve
+                          </button>
+                          <button className="btn btn-ghost btn-sm danger" disabled={busy === pg._id}
+                                  onClick={() => moderateGround(pg, 'reject')}>
+                            <IconClose style={{ width: 14, height: 14 }} /> Reject
+                          </button>
+                        </div>
+                      ) : pg.moderationStatus === 'approved' ? (
+                        <div className="row gap-8 wrap" style={{ alignItems: 'center' }}>
+                          <span className="badge badge-success">live</span>
+                          {/* A ground that closes or turns out to be private
+                              needs a way down that is not "reject a submission
+                              that was already accepted". */}
+                          <button className="btn btn-ghost btn-sm danger" disabled={busy === pg._id}
+                                  onClick={() => unpublishGround(pg)}>
+                            Take down
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="badge badge-danger">{pg.moderationStatus}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </>

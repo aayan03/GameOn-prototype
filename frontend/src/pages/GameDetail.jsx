@@ -121,7 +121,7 @@ export default function GameDetail() {
       </Link>
 
       <div className="vd-layout">
-        <main className="vd-main">
+        <div className="vd-main">
           <div className="row gap-8 wrap" style={{ marginBottom: 10 }}>
             <span className="badge badge-volt">{TYPE_LABEL[post.type]}</span>
             <span className="badge badge-soft"><SportIcon sport={post.sport} size={14} /> {SPORT_LABELS[post.sport]}</span>
@@ -271,7 +271,7 @@ export default function GameDetail() {
               />
             </section>
           )}
-        </main>
+        </div>
 
         {/* ── Action panel ─────────────────────────────────── */}
         <aside className="vd-side">

@@ -88,3 +88,9 @@ export const IconRefresh = (p) => (
 export const IconShield = (p) => (
   <svg viewBox="0 0 24 24" {...base} {...p}><path d="M12 3 5 6v6c0 4.4 3 8 7 9 4-1 7-4.6 7-9V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
 );
+export const IconEye = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+);
+export const IconEyeOff = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}><path d="M10.6 6.7A9.9 9.9 0 0 1 12 6.6c6.4 0 10 5.4 10 5.4a17 17 0 0 1-3.2 3.6M6.4 7.9A16.6 16.6 0 0 0 2 12s3.6 5.4 10 5.4a10 10 0 0 0 3.4-.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="m3 3 18 18" /></svg>
+);

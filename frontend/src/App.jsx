@@ -43,6 +43,10 @@ const OwnerPayouts   = lazy(() => import('./pages/OwnerPayouts.jsx'));
 const OwnerVenueNew  = lazy(() => import('./pages/OwnerVenueNew.jsx'));
 const Admin          = lazy(() => import('./pages/Admin.jsx'));
 const Notifications  = lazy(() => import('./pages/Notifications.jsx'));
+const Playgrounds     = lazy(() => import('./pages/Playgrounds.jsx'));
+const PlaygroundDetail= lazy(() => import('./pages/PlaygroundDetail.jsx'));
+const PlaygroundNew   = lazy(() => import('./pages/PlaygroundNew.jsx'));
+const PlaygroundsMine = lazy(() => import('./pages/PlaygroundsMine.jsx'));
 const NotFound       = lazy(() => import('./pages/NotFound.jsx'));
 // The other end of the signup link — this is where the account is created.
 const VerifyEmail    = lazy(() => import('./pages/VerifyEmail.jsx'));
@@ -83,8 +87,12 @@ export default function App() {
           <AppShell />
           <WakingBanner />
           <div className="app-shell">
+            {/* First tab stop on every page. Without it a keyboard user crosses
+                the whole nav — measured at eight stops — before reaching the
+                content, on every single navigation. */}
+            <a href="#main" className="skip-link">Skip to content</a>
             <Navbar />
-            <main className="app-main">
+            <main id="main" tabIndex={-1} className="app-main">
               {/* The boundary sits OUTSIDE Suspense so a chunk that fails to
                   load — a stale index after a deploy, a dropped connection —
                   renders the error card instead of hanging on the spinner. */}
@@ -98,6 +106,11 @@ export default function App() {
                     <Route path="/venues/:idOrSlug" element={<VenueDetail />} />
                     <Route path="/venues/:idOrSlug/book" element={<BookSlot />} />
                     <Route path="/map" element={<MapView />} />
+                    {/* Free public grounds — browsing is open, adding is not. */}
+                    <Route path="/playgrounds" element={<Playgrounds />} />
+                    <Route path="/playgrounds/new" element={<ProtectedRoute><PlaygroundNew /></ProtectedRoute>} />
+                    <Route path="/playgrounds/mine" element={<ProtectedRoute><PlaygroundsMine /></ProtectedRoute>} />
+                    <Route path="/playgrounds/:idOrSlug" element={<PlaygroundDetail />} />
                     <Route path="/teamup" element={<TeamUp />} />
                     <Route path="/teamup/:id" element={<GameDetail />} />
 

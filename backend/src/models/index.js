@@ -1,5 +1,6 @@
 export { default as User } from './User.js';
 export { default as Venue } from './Venue.js';
+export { default as Playground } from './Playground.js';
 export { default as Booking } from './Booking.js';
 export { default as TeamUpPost } from './TeamUpPost.js';
 export { default as Team } from './Team.js';

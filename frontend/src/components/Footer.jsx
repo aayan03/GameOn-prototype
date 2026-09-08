@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 const LINKS = {
   Play: [
     { to: '/venues', label: 'Find venues' },
+        { to: '/playgrounds', label: 'Free grounds' },
     { to: '/map', label: 'Explore the map' },
     { to: '/events', label: 'Sports events' },
     { to: '/teamup', label: 'TeamUp' },
@@ -51,7 +52,9 @@ export default function Footer() {
 
           {Object.entries(LINKS).map(([heading, links]) => (
             <div key={heading}>
-              <h4>{heading}</h4>
+              {/* h3, not h4 — these sit under the page h2s, and skipping a
+                  level makes the document outline lie. */}
+              <h3 className="footer-heading">{heading}</h3>
               {links.map((l) => (
                 <Link key={l.to} to={l.to} className="footer-link">{l.label}</Link>
               ))}

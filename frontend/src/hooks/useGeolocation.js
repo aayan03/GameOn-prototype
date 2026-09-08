@@ -2,10 +2,34 @@ import { useState, useCallback, useEffect } from 'react';
 
 const CACHE_KEY = 'gameon_last_location';
 
+/**
+ * How long a remembered position is still worth believing.
+ *
+ * The cache used to have no expiry at all, and that was a correctness bug
+ * with a user-visible lie attached: someone who granted location in Bengaluru
+ * months ago and opened the site in Mumbai got Bengaluru venues under the
+ * heading "Sorted by distance from where you are right now" — with the
+ * browser permission showing DENIED and no prompt ever shown. Worse, the 30km
+ * radius filter then hid every venue actually near them.
+ *
+ * Thirty minutes is long enough to survive a page reload, a tab restore and a
+ * walk to the pitch, and short enough that it cannot follow you to another
+ * city.
+ */
+const CACHE_TTL_MS = 30 * 60 * 1000;
+
 function readCache() {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    // Anything written before this TTL existed has no `ts` and is discarded
+    // rather than trusted — the whole point is not knowing how old it is.
+    if (!cached?.ts || Date.now() - cached.ts > CACHE_TTL_MS) {
+      localStorage.removeItem(CACHE_KEY);
+      return null;
+    }
+    return cached;
   } catch { return null; }
 }
 
@@ -38,6 +62,8 @@ export default function useGeolocation({ auto = false } = {}) {
             lat: Number(pos.coords.latitude.toFixed(6)),
             lng: Number(pos.coords.longitude.toFixed(6)),
             accuracy: pos.coords.accuracy,
+            // Stamped, so readCache can tell how old it is.
+            ts: Date.now(),
           };
           setCoords(next);
           setStatus('granted');

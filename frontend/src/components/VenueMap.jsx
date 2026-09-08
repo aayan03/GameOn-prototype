@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-le
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, } from '../utils/format.js';
+import { rupees, distanceLabel, srcSetFor } from '../utils/format.js';
 import { sportIconMarkup } from './SportIcon.jsx';
 
 /**
@@ -26,8 +26,14 @@ const TILES = {
 };
 
 /** Custom pin so markers carry the sport and the brand colour. */
-function makeIcon(sport, isManual) {
-  const bg = isManual ? '#FF9C3D' : '#1A1A2E';
+/**
+ * `kind` picks the colour before booking mode does: a free public ground is
+ * a different KIND of thing from a venue, not a venue with different terms,
+ * and somebody scanning the map should be able to see that at a glance
+ * without reading a single popup.
+ */
+function makeIcon(sport, isManual, kind) {
+  const bg = kind === 'playground' ? '#1FA85C' : isManual ? '#FF9C3D' : '#1A1A2E';
   const glyph = sportIconMarkup(sport, 19);
   return L.divIcon({
     className: 'gameon-pin-wrap',
@@ -122,24 +128,37 @@ export default function VenueMap({
           <Marker
             key={pin.id}
             position={[pin.lat, pin.lng]}
-            icon={makeIcon(pin.sports?.[0], pin.bookingMode === 'manual')}
+            icon={makeIcon(pin.sports?.[0], pin.bookingMode === 'manual', pin.kind)}
             eventHandlers={onPinClick ? { click: () => onPinClick(pin) } : undefined}
           >
             <Popup>
               <div className="map-pop">
-                {pin.image && <img src={pin.image} alt="" className="map-pop-img" />}
+                {pin.image && (
+                  <img
+                    src={pin.image} srcSet={srcSetFor(pin.image, [400, 600]) || undefined}
+                    sizes="240px" alt="" loading="lazy" decoding="async"
+                    className="map-pop-img"
+                  />
+                )}
                 <div className="map-pop-body">
                   <strong>{pin.name}</strong>
                   <div className="text-faint">{[pin.area, pin.city].filter(Boolean).join(', ')}</div>
                   <div className="map-pop-row">
                     {pin.rating > 0 && <span>⭐ {pin.rating.toFixed(1)}</span>}
-                    <span>{rupees(pin.startingPrice)}/hr</span>
+                    {/* "₹0/hr" would be an odd way to say free, and a price of
+                        any kind on public land is the wrong idea entirely. */}
+                    {pin.kind === 'playground'
+                      ? <span className="badge badge-free">Free</span>
+                      : <span>{rupees(pin.startingPrice)}/hr</span>}
                   </div>
                   {typeof pin.distanceKm === 'number' && (
                     <div className="text-faint">{distanceLabel(pin.distanceKm)}</div>
                   )}
-                  <Link to={`/venues/${pin.slug || pin.id}`} className="btn btn-primary btn-sm btn-block" style={{ marginTop: 8 }}>
-                    View venue
+                  <Link
+                    to={`${pin.kind === 'playground' ? '/playgrounds' : '/venues'}/${pin.slug || pin.id}`}
+                    className="btn btn-primary btn-sm btn-block" style={{ marginTop: 8 }}
+                  >
+                    {pin.kind === 'playground' ? 'View ground' : 'View venue'}
                   </Link>
                 </div>
               </div>

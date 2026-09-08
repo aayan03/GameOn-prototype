@@ -73,3 +73,69 @@ export function eventWhen(iso) {
     hour: 'numeric', minute: '2-digit',
   });
 }
+
+/** Free public grounds — a shorter list than AMENITIES; a park has no café. */
+export const PLAYGROUND_FACILITY_LABELS = {
+  lit: 'Floodlit',
+  fenced: 'Fenced',
+  washroom: 'Washroom',
+  drinking_water: 'Drinking water',
+  seating: 'Seating',
+  parking: 'Parking',
+  marked_pitch: 'Marked pitch',
+  nets: 'Nets',
+  hoops: 'Hoops',
+  shade: 'Shade',
+};
+export const PLAYGROUND_FACILITIES = Object.keys(PLAYGROUND_FACILITY_LABELS);
+
+export const SURFACE_LABELS = {
+  grass: 'Grass', mud: 'Mud', concrete: 'Concrete', asphalt: 'Asphalt',
+  sand: 'Sand', synthetic: 'Synthetic', mixed: 'Mixed', other: 'Other',
+};
+
+/** "06:00" -> "6:00 AM". Grounds are posted in 24h; people read 12h. */
+export function clockLabel(hhmm = '') {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  if (Number.isNaN(h)) return hhmm;
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${String(m ?? 0).padStart(2, '0')} ${suffix}`;
+}
+
+/** "Open all hours", "6:00 AM – 8:00 PM", or nothing useful to say. */
+export function accessLabel(access = {}) {
+  if (access.alwaysOpen) return 'Open all hours';
+  if (access.opensAt && access.closesAt) return `${clockLabel(access.opensAt)} – ${clockLabel(access.closesAt)}`;
+  return 'Hours not known';
+}
+
+/**
+ * A `srcset` for image hosts that resize from the URL.
+ *
+ * Venue photos are arbitrary URLs, so there is no general way to ask for a
+ * smaller one — but the seed and most pasted links are Unsplash, which takes
+ * a `w=` query parameter. Where that is present we can offer the browser a
+ * range and let it pick; where it is not, we return null and the plain `src`
+ * stands. Measured before this: cards rendering at 289px were downloading
+ * `w=1200`, about 56KB each for roughly four times the pixels needed.
+ *
+ * Deliberately narrow. Rewriting arbitrary third-party URLs on a guess is how
+ * you end up with broken images on somebody else's CDN.
+ */
+const RESIZABLE = /^https:\/\/images\.unsplash\.com\//;
+
+export function srcSetFor(url, widths = [400, 600, 900, 1200]) {
+  if (!url || !RESIZABLE.test(url)) return null;
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (!u.searchParams.has('w')) return null;
+
+  return widths
+    .map((w) => {
+      const next = new URL(u);
+      next.searchParams.set('w', String(w));
+      return `${next.toString()} ${w}w`;
+    })
+    .join(', ');
+}

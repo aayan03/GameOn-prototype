@@ -192,7 +192,6 @@ test('a listing a venue has already claimed is never overwritten', async () => {
   // The venue got in touch and took ownership.
   const v = await Venue.findOne({ 'address.city': 'Lucknow' });
   v.isClaimed = true;
-  v.name = v.name;
   await v.save();
   const realPrice = 1750;
   v.courts[0].pricePerHour = realPrice;

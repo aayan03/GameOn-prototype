@@ -104,7 +104,7 @@ export default function VenueDetail() {
         </nav>
 
         <div className="vd-layout">
-          <main className="vd-main">
+          <div className="vd-main">
             <div className="between gap-16" style={{ alignItems: 'flex-start' }}>
               <div>
                 <div className="row gap-8 wrap" style={{ marginBottom: 8 }}>
@@ -288,7 +288,7 @@ export default function VenueDetail() {
                 <p className="text-soft">No reviews yet — be the first to play here and leave one.</p>
               )}
             </section>
-          </main>
+          </div>
 
           {/* ── Booking sidebar ──────────────────────────────── */}
           <aside className="vd-side">

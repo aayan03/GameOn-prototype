@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { rupees, distanceLabel, SPORT_LABELS } from '../utils/format.js';
+import { rupees, distanceLabel, SPORT_LABELS, srcSetFor } from '../utils/format.js';
 import { IconStar, IconPin, IconBolt, IconPhone, IconHeart } from './Icons.jsx';
 import SportIcon from './SportIcon.jsx';
 
@@ -12,7 +12,12 @@ export default function VenueCard({ venue, onToggleFavorite, isFavorite }) {
     <article className="venue-card fade-in">
       <Link to={`/venues/${venue.slug || venue._id}`} className="vc-media" aria-label={venue.name}>
         {image
-          ? <img src={image} alt="" loading="lazy" />
+          ? <img
+            src={image}
+            srcSet={srcSetFor(image) || undefined}
+            sizes="(max-width: 720px) 92vw, (max-width: 1100px) 45vw, 320px"
+            alt="" loading="lazy" decoding="async"
+          />
           : <div className="vc-media-fallback"><SportIcon sport={venue.sports?.[0]} size={44} /></div>}
 
         <div className="vc-badges">

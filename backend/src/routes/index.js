@@ -11,6 +11,7 @@ import paymentRoutes from './payment.routes.js';
 import notificationRoutes from './notification.routes.js';
 import reviewRoutes from './review.routes.js';
 import eventRoutes from './event.routes.js';
+import playgroundRoutes from './playground.routes.js';
 import cronRoutes from './cron.routes.js';
 import { SPORTS, AMENITIES, BOOKING_MODES, SKILL_LEVELS, LOYALTY_TIERS, EVENT_TYPES } from '../config/constants.js';
 import { ok } from '../utils/response.js';
@@ -64,6 +65,7 @@ router.get('/config', (req, res) => ok(res, {
 
 router.use('/auth', authRoutes);
 router.use('/venues', venueRoutes);
+router.use('/playgrounds', playgroundRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/teamup', teamupRoutes);
 router.use('/teams', teamRoutes);

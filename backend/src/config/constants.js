@@ -18,6 +18,19 @@ export const AMENITIES = [
   'first_aid', 'seating', 'cafeteria', 'equipment_rental', 'cctv', 'shower', 'wifi',
 ];
 
+/**
+ * What a free public ground might actually have.
+ *
+ * Shorter than AMENITIES on purpose — a municipal park does not have a
+ * cafeteria or equipment rental, and offering those as options invites
+ * optimistic ticking. `fenced` and `lit` are the two that decide whether a
+ * place is usable after dark, which is when most people play.
+ */
+export const PLAYGROUND_FACILITIES = [
+  'lit', 'fenced', 'washroom', 'drinking_water', 'seating', 'parking',
+  'marked_pitch', 'nets', 'hoops', 'shade',
+];
+
 export const ROLES = { PLAYER: 'player', OWNER: 'owner', ADMIN: 'admin' };
 
 // Slide 4 of the deck: GameOn's edge is supporting BOTH venue types.

@@ -4,6 +4,7 @@ import { authApi } from '../api/endpoints.js';
 import { tokenStore } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 /**
  * Sets a new password from an emailed link.
@@ -94,8 +95,8 @@ export default function ResetPassword() {
         <form onSubmit={submit} className="stack gap-16">
           <div className="field">
             <label className="label" htmlFor="rp-pass">New password</label>
-            <input
-              id="rp-pass" type="password" className={`input${tooShort || noLetter || noDigit ? ' error' : ''}`}
+            <PasswordInput
+              id="rp-pass" className={tooShort || noLetter || noDigit ? 'error' : ''}
               required minLength={8} maxLength={128} autoComplete="new-password" autoFocus
               value={password} onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
@@ -107,8 +108,8 @@ export default function ResetPassword() {
 
           <div className="field">
             <label className="label" htmlFor="rp-confirm">Confirm password</label>
-            <input
-              id="rp-confirm" type="password" className={`input${mismatch ? ' error' : ''}`}
+            <PasswordInput
+              id="rp-confirm" className={mismatch ? 'error' : ''}
               required maxLength={128} autoComplete="new-password"
               value={confirm} onChange={(e) => setConfirm(e.target.value)}
               placeholder="Type it again"

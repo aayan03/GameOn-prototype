@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { authApi } from '../api/endpoints.js';
 import { SPORT_LABELS } from '../utils/format.js';
 import SportIcon from '../components/SportIcon.jsx';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
@@ -182,8 +183,8 @@ export default function Register() {
                 required eight plus a letter and a number, so a valid-looking
                 password was accepted by the browser and then rejected by the
                 server with no hint as to which rule it broke. */}
-            <input
-              id="r-pass" type="password" className={`input${fieldErrors.password ? ' error' : ''}`}
+            <PasswordInput
+              id="r-pass" className={fieldErrors.password ? 'error' : ''}
               required minLength={8} maxLength={128} autoComplete="new-password"
               value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="At least 8 characters"

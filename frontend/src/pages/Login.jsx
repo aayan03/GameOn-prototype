@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 const DEMOS = [
   { label: 'Demo player', email: 'aayan@gameon.app', password: 'player123' },
@@ -76,8 +77,8 @@ export default function Login() {
           </div>
           <div className="field">
             <label className="label" htmlFor="password">Password</label>
-            <input
-              id="password" type="password" className="input" required autoComplete="current-password"
+            <PasswordInput
+              id="password" required autoComplete="current-password"
               value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="••••••••"
             />

@@ -167,3 +167,21 @@ export const configApi = {
   get: () => api.get('/config', undefined, { auth: false }),
   health: () => api.get('/health', undefined, { auth: false }),
 };
+
+/**
+ * Free public grounds, added by the community.
+ * Browsing is public; contributing and moderating are not.
+ */
+export const playgroundApi = {
+  list:     (params) => api.get('/playgrounds', params, { auth: false }),
+  get:      (idOrSlug) => api.get(`/playgrounds/${idOrSlug}`),
+  cities:   () => api.get('/playgrounds/meta/cities', undefined, { auth: false }),
+  create:   (payload) => api.post('/playgrounds', payload),
+  update:   (id, payload) => api.patch(`/playgrounds/${id}`, payload),
+  mine:     () => api.get('/playgrounds/mine'),
+  report:   (id) => api.post(`/playgrounds/${id}/report`, {}),
+  queue:    (status) => api.get('/playgrounds/admin/queue', status ? { status } : undefined),
+  moderate: (id, decision, note) => api.patch(`/playgrounds/${id}/moderate`, { decision, note }),
+  unpublish:(id, note) => api.patch(`/playgrounds/${id}/unpublish`, { note }),
+  correct:  (id, text) => api.post(`/playgrounds/${id}/correction`, { text }),
+};

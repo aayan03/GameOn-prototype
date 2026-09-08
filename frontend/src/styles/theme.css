@@ -51,6 +51,7 @@
   --bg-2:       #F3EFE6;
   --surface:    #FFFFFF;
   --surface-2:  #F6F3EC;
+  --skeleton-hi: #EAE4D7;
   --border:     var(--stroke);
   --hairline:   #E6E0D4;
 
@@ -170,6 +171,8 @@
   --bg-2:       #1D1D3B;
   --surface:    #23234A;   /* clearly lighter than bg, so cards lift */
   --surface-2:  #2B2B58;
+  /* A lift off the surface, not a light band on a dark card. */
+  --skeleton-hi: #3A3A6B;
   --hairline:   #33335C;
 
   --text:       #F1EFFA;
@@ -219,6 +222,7 @@
     --bg-2:       #1D1D3B;
     --surface:    #23234A;
     --surface-2:  #2B2B58;
+    --skeleton-hi: #3A3A6B;
     --hairline:   #33335C;
     --text:       #F1EFFA;
     --text-soft:  #B9B3D4;

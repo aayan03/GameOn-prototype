@@ -103,8 +103,13 @@
 }
 .spinner-light { border-color: rgba(255,255,255,.3); border-top-color: #fff; }
 
+/*
+  The highlight is a token, not #EAE4D7.
+  Hardcoded, the sweep was a near-white band crossing a dark navy card in dark
+  mode — a flash rather than a shimmer, on every loading state on the site.
+*/
 .skeleton {
-  background: linear-gradient(90deg, var(--surface-2) 25%, #EAE4D7 50%, var(--surface-2) 75%);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--skeleton-hi) 50%, var(--surface-2) 75%);
   background-size: 200% 100%; animation: shimmer 1.4s infinite;
   border-radius: var(--r); border: var(--bw-thin) solid var(--hairline);
 }
@@ -2043,4 +2048,138 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
   .event-cta { flex-direction: column; align-items: stretch; }
   .event-cta .btn { width: 100%; justify-content: center; }
   .owner-event-row { flex-direction: column; align-items: stretch; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FREE PUBLIC GROUNDS — community-added, not bookable
+   ═══════════════════════════════════════════════════════════════ */
+
+.pg-grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.pg-card {
+  display: flex; flex-direction: column; gap: 8px; height: 100%;
+  background: var(--surface); color: var(--text);
+  border: var(--bw) solid var(--stroke); border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm); padding: 18px 20px;
+  transition: transform .2s var(--spring), box-shadow .2s var(--spring);
+}
+.pg-card:hover { transform: translate(-3px,-3px); box-shadow: var(--sh); }
+.pg-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.pg-card-head h3 { font-size: 1.08rem; line-height: 1.25; }
+
+.pg-where {
+  display: flex; align-items: center; gap: 5px;
+  color: var(--text-soft); font-size: .9rem;
+}
+
+.pg-card-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; margin-top: auto; padding-top: 12px;
+  border-top: var(--bw-thin) dashed var(--hairline); font-size: .88rem;
+}
+
+/* "Free" is the whole proposition, so it gets the signature colour rather
+   than the neutral badge every other status uses. */
+.badge-free {
+  background: var(--volt); color: var(--ink);
+  border: var(--bw-thin) solid var(--stroke);
+  font-weight: 800;
+}
+.badge-free.big { padding: 7px 14px; font-size: .84rem; }
+
+/* The prompt to contribute. This IS the feature, so it sits above the list
+   rather than at the bottom where a footer link would go unread. */
+.pg-cta {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; flex-wrap: wrap;
+  padding: 16px 22px; margin-bottom: 20px;
+  border-radius: var(--r-lg);
+  background: var(--volt-soft); color: var(--text);
+  border: var(--bw) solid var(--stroke); box-shadow: var(--sh-xs);
+}
+
+.pg-credit {
+  display: flex; align-items: center; gap: 14px; margin-top: 18px;
+}
+.avatar-sm {
+  width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--violet); color: #fff;
+  border: var(--bw-thin) solid var(--stroke);
+  font-family: 'Outfit', sans-serif; font-weight: 800; font-size: .9rem;
+}
+
+.check-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .95rem; cursor: pointer;
+}
+.check-row input { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* ── Password reveal ────────────────────────────────────────── */
+
+.pass-wrap { position: relative; display: block; }
+/* Room for the button, so a long password never runs underneath it. */
+.pass-input { width: 100%; padding-right: 46px; }
+.pass-peek {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 34px; height: 34px; border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  background: none; border: 0; color: var(--text-faint);
+  transition: color .15s, background .15s;
+}
+.pass-peek:hover { color: var(--text); background: var(--surface-2); }
+
+/* Footer column headings are h3 for the outline, but still small labels
+   visually — the level is about structure, not size. */
+.footer-heading {
+  font-size: .82rem; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-faint); margin-bottom: 12px;
+}
+
+/* ── Skip link ──────────────────────────────────────────────── */
+.skip-link {
+  position: absolute; left: 12px; top: -60px; z-index: 300;
+  padding: 10px 18px; border-radius: var(--r-sm);
+  background: var(--volt); color: var(--ink);
+  border: var(--bw) solid var(--stroke); box-shadow: var(--sh-sm);
+  font-family: 'Outfit', sans-serif; font-weight: 800;
+  transition: top .16s var(--snap);
+}
+/* Off-screen until focused, then it drops in. NOT display:none — that would
+   take it out of the tab order, which is the entire point of it. */
+.skip-link:focus { top: 12px; }
+/* The target takes focus programmatically and must not draw a ring for it. */
+#main:focus { outline: none; }
+
+/* Matches the green used for free-ground pins on the map, so the filter and
+   the pins are obviously the same thing. */
+.free-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #1FA85C; border: var(--bw-thin) solid var(--stroke);
+  display: inline-block; flex-shrink: 0;
+}
+
+/* ── The hybrid pitch, compressed ───────────────────────────────
+   Was three full cards under their own heading and eyebrow, a whole screen
+   of it. Three lines under "How it works" carries the same information at a
+   fifth of the height. */
+.edge-strip {
+  display: grid; gap: 14px; margin-top: 30px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.edge-mini {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 18px; border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text);
+  border: var(--bw) solid var(--stroke); box-shadow: var(--sh-xs);
+}
+.edge-mini strong { font-family: 'Outfit', sans-serif; font-size: .98rem; display: block; }
+.edge-mini p { font-size: .89rem; margin-top: 3px; line-height: 1.45; }
+.edge-icon.sm {
+  width: 36px; height: 36px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center; color: var(--ink);
+  border: var(--bw-thin) solid var(--stroke);
 }
