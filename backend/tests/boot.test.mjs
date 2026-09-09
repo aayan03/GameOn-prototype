@@ -132,3 +132,44 @@ test('a production config with a default secret still refuses to start', () => {
   );
   assert.match(r.stdout, /THREW/, 'validateEnv accepted a known-bad secret');
 });
+
+/* ── A live gateway needs its webhook secret (GO-03) ─────────── */
+
+/**
+ * The browser confirms a capture by calling /payments/verify. When that call
+ * never arrives — a dropped connection, a backgrounded tab, a cold start —
+ * the webhook is the only thing that reconciles the payment, because Razorpay
+ * retries it until we answer. Booting with keys but no webhook secret means
+ * silently losing exactly those payments, so it is fatal rather than a
+ * warning nobody reads.
+ */
+const withGateway = (extra = {}) => ({
+  RAZORPAY_KEY_ID: 'rzp_live_bootcheck',
+  RAZORPAY_KEY_SECRET: 'bootcheck_secret_value',
+  ...extra,
+});
+
+const validates = (env) => inProcess(
+  `const { validateEnv } = await import(${JSON.stringify(url('src/config/env.js'))});
+   try { validateEnv(); console.log('NO_THROW'); } catch (e) { console.log('THREW'); }`,
+  env,
+);
+
+test('a live gateway without a webhook secret refuses to start', () => {
+  const r = validates(withGateway());
+  assert.match(r.stdout, /THREW/, 'booted with a gateway it cannot reconcile');
+  assert.match(r.stderr + r.stdout, /RAZORPAY_WEBHOOK_SECRET/,
+    'the operator is told which variable is missing');
+});
+
+test('a live gateway with a webhook secret starts', () => {
+  const r = validates(withGateway({ RAZORPAY_WEBHOOK_SECRET: 'whsec_bootcheck_value' }));
+  assert.match(r.stdout, /NO_THROW/, r.stderr);
+});
+
+test('the wallet simulation still needs no webhook secret', () => {
+  // No Razorpay keys at all: there is no gateway to reconcile, so the secret
+  // is meaningless and demanding it would block every demo deployment.
+  const r = validates({ RAZORPAY_KEY_ID: '', RAZORPAY_KEY_SECRET: '' });
+  assert.match(r.stdout, /NO_THROW/, r.stderr);
+});

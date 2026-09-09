@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { bookingApi, paymentApi } from '../api/endpoints.js';
-import { openCheckout } from '../utils/razorpay.js';
+import { openCheckout, verifyPayment } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Confetti from '../components/Confetti.jsx';
@@ -79,6 +79,49 @@ export default function BookingDetail() {
 
   const [paying, setPaying] = useState(false);
 
+  /**
+   * A payment we know was captured but could not confirm.
+   *
+   * Seeded from the URL when the booking screen hands over after a failed
+   * verify, and set directly when Pay now hits the same wall. While it is
+   * set, this page polls: the webhook reconciles the payment server-side, so
+   * the booking usually flips to paid on its own within a few seconds and the
+   * player watches it happen rather than being left with an error.
+   */
+  const [pendingPayment, setPendingPayment] = useState(() => params.get('pending_payment') || '');
+  const isPaid = booking?.payment?.status === 'paid';
+
+  useEffect(() => {
+    if (!pendingPayment || isPaid) return undefined;
+
+    let cancelled = false;
+    let tries = 0;
+    let timer = null;
+
+    const poll = async () => {
+      tries += 1;
+      try {
+        const { data } = await bookingApi.get(groupRef);
+        if (cancelled) return;
+        setBooking(data);
+        if (data.payment?.status === 'paid') {
+          setPendingPayment('');
+          const next = new URLSearchParams(params);
+          next.delete('pending_payment');
+          setParams(next, { replace: true });
+          toast.success('Payment confirmed. See you on the pitch.');
+          return;
+        }
+      } catch { /* keep waiting — the next tick tries again */ }
+      // Roughly a minute of watching, then stop and leave the banner up.
+      if (!cancelled && tries < 12) timer = setTimeout(poll, 5000);
+    };
+
+    timer = setTimeout(poll, 4000);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPayment, isPaid, groupRef]);
+
   /** Finish a payment that was started and abandoned. */
   const payNow = async () => {
     setPaying(true);
@@ -96,7 +139,18 @@ export default function BookingDetail() {
           : result.message || 'Could not open the payment window.');
         return;
       }
-      await paymentApi.verify({ groupRef, ...result.payload });
+      // The money is gone by this point, so a failure here must never read as
+      // "the payment did not work". See verifyPayment in utils/razorpay.js.
+      const { ok } = await verifyPayment(groupRef, result.payload);
+
+      if (!ok) {
+        setPendingPayment(result.payload.paymentId);
+        toast.error(
+          'We took your payment but could not confirm it just now. It usually lands within a minute.'
+        );
+        return;
+      }
+
       const { data } = await bookingApi.get(groupRef);
       setBooking(data);
       toast.success('Payment confirmed. See you on the pitch.');
@@ -246,7 +300,28 @@ export default function BookingDetail() {
             <div className="qr-box"><QrBlock text={booking.bookingRef} /></div>
           )}
 
-          {awaitingPayment && (
+          {/* A capture we know happened but have not been able to confirm.
+              This must never show the "not paid yet" copy below it — the
+              player HAS paid, and telling them otherwise is how a support
+              ticket becomes a chargeback. */}
+          {awaitingPayment && pendingPayment && (
+            <div className="alert alert-warn" style={{ display: 'block' }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>
+                We have your payment — confirming it now
+              </strong>
+              <p style={{ fontSize: '.92rem', marginBottom: 8 }}>
+                Your card or UPI account was charged and the slot is held. We are waiting on the
+                confirmation from the payment provider, which normally takes a few seconds. This
+                page updates itself.
+              </p>
+              <p style={{ fontSize: '.85rem', marginBottom: 0 }} className="text-faint">
+                Payment reference <span className="mono">{pendingPayment}</span> — quote this if
+                you need to contact us.
+              </p>
+            </div>
+          )}
+
+          {awaitingPayment && !pendingPayment && (
             <div className="alert alert-warn" style={{ display: 'block' }}>
               <strong style={{ display: 'block', marginBottom: 4 }}>This booking is not paid yet</strong>
               <p style={{ fontSize: '.92rem', marginBottom: 12 }}>

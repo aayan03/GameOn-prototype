@@ -54,10 +54,14 @@ What still needs your attention even with keys set:
   it. It is capped at ₹25,000/day per account and rate-limited, but it is a
   faucet. Delete it, or wire it to a real Razorpay order, before launch.
 - Register the webhook at `https://your-api/api/payments/webhook` for the
-  `payment.captured` and `payment.failed` events.
 - Refunds currently return to the GameOn wallet. If you want money to go back
   to the original card, call `refundPayment()` from `services/payment.service.js`
   in the cancellation path — the function is written and waiting.
+  `payment.captured` and `payment.failed` events. `RAZORPAY_WEBHOOK_SECRET` is
+  **required** once the other two keys are set — the server refuses to boot
+  without it. It is not optional plumbing: when a browser never gets to call
+  `/payments/verify` after a capture, the webhook is the only thing that
+  reconciles the payment, and without it that money is simply lost.
 
 ---
 

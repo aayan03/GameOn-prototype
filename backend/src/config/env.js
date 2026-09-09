@@ -217,7 +217,26 @@ export function validateEnv() {
     if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
       warn.push('No Razorpay keys — running the SIMULATED wallet. Do not take real money in this mode.');
     } else if (!env.RAZORPAY_WEBHOOK_SECRET) {
-      warn.push('RAZORPAY_WEBHOOK_SECRET is not set. Webhooks will be rejected, so payments captured out-of-band will not reconcile.');
+      /**
+       * Fatal, not a warning, and the distinction is a customer's money.
+       *
+       * The browser confirms a payment by calling /payments/verify straight
+       * after Checkout returns. If that call does not arrive — a dropped
+       * connection, a backgrounded tab, a cold start — the capture has
+       * happened and nothing on this side knows. The slot is then released by
+       * the ten-minute hold sweep and the player is told nothing was charged.
+       *
+       * The webhook is the only path that closes that gap, because Razorpay
+       * retries it until we answer. Taking real card payments without it
+       * configured means silently losing the ones where the round trip fails,
+       * so refusing to boot is the honest behaviour.
+       */
+      fatal.push(
+        'RAZORPAY_WEBHOOK_SECRET is required whenever Razorpay keys are set. Without it every '
+        + 'webhook is rejected, and a payment whose browser callback never arrives is captured '
+        + 'with no booking to show for it. Add the secret from Razorpay Dashboard → Settings → '
+        + 'Webhooks, or clear RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET to run the wallet simulation.'
+      );
     }
 
     if (env.RAZORPAY_KEY_ID.startsWith('rzp_test_')) {

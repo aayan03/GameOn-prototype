@@ -10,7 +10,51 @@
  * initial page load would slow down every booking that pays from the wallet.
  */
 
+import { paymentApi } from '../api/endpoints.js';
+
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+
+const wait = (ms) => new Promise((r) => { setTimeout(r, ms); });
+
+/**
+ * Confirms a capture with the API, retrying a transient failure.
+ *
+ * Only ever called after Razorpay has taken the money, which is what makes
+ * the retry worth having: a single unguarded verify meant one dropped
+ * connection ended in a red error toast for a payment that had succeeded —
+ * and, because the booking stayed unpaid, the hold sweep released the slot
+ * ten minutes later and told the player nothing had been charged.
+ *
+ * A 4xx is NOT retried. "This booking is no longer active", "the amount does
+ * not match" are settled answers, and hammering them only delays the honest
+ * message. Network failures, timeouts and 5xx are the ones that clear on
+ * their own.
+ *
+ * Returns `{ ok, error }`. `ok: true` means the API has acknowledged the
+ * payment — including the case where the webhook got there first, which is a
+ * success however it reads on the wire.
+ */
+export async function verifyPayment(groupRef, payload, { attempts = 3 } = {}) {
+  let last = null;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await paymentApi.verify({ groupRef, ...payload });
+      return { ok: true, error: null };
+    } catch (err) {
+      last = err;
+      if (err?.status >= 400 && err.status < 500) {
+        // Already settled by the webhook, or by an earlier attempt whose
+        // response never came back to us.
+        if (/already paid/i.test(err.message || '')) return { ok: true, error: null };
+        return { ok: false, error: err };
+      }
+      if (i < attempts - 1) await wait(1200 * (i + 1));
+    }
+  }
+
+  return { ok: false, error: last };
+}
 
 let loader = null;
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { bookingApi, venueApi, paymentApi } from '../api/endpoints.js';
-import { openCheckout, TEST_CARDS } from '../utils/razorpay.js';
+import { openCheckout, verifyPayment, TEST_CARDS } from '../utils/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { dateStrip, prettyDate } from '../utils/date.js';
@@ -173,7 +173,34 @@ export default function BookSlot() {
           return;
         }
 
-        await paymentApi.verify({ groupRef: res.booking.groupRef, ...result.payload });
+        /**
+         * The card has been charged by this point.
+         *
+         * Everything from here is about not losing that fact. A single
+         * unguarded verify meant one dropped connection ended in a red error
+         * toast for a payment that had succeeded — and, because the booking
+         * stayed unpaid, the hold sweep released the slot ten minutes later
+         * and told the player nothing had been charged.
+         *
+         * So: retry a few times, and if it still will not land, say plainly
+         * that the money was taken and hand over the payment id. The webhook
+         * reconciles it server-side either way; this is about what the person
+         * holding the phone is told.
+         */
+        const { ok: verified } = await verifyPayment(res.booking.groupRef, result.payload);
+
+        if (!verified) {
+          toast.error(
+            'We took your payment but could not confirm it just now. Your booking page has the '
+            + 'details — it usually updates within a minute.'
+          );
+          navigate(
+            `/bookings/${res.booking.groupRef}?pending_payment=${encodeURIComponent(result.payload.paymentId)}`,
+            { replace: true }
+          );
+          return;
+        }
+
         toast.success('Payment confirmed. See you on the pitch.');
         navigate(`/bookings/${res.booking.groupRef}?new=1`, { replace: true });
         return;
