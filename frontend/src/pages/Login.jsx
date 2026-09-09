@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import PasswordInput from '../components/PasswordInput.jsx';
+import { safeRedirect } from '../utils/redirect.js';
 
 const DEMOS = [
   { label: 'Demo player', email: 'aayan@gameon.app', password: 'player123' },
@@ -25,7 +26,26 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const redirectTo = location.state?.from?.pathname || '/';
+  const [params] = useSearchParams();
+
+  /**
+   * Where to land after signing in.
+   *
+   * Router state is the normal route — ProtectedRoute stamps the page you were
+   * trying to reach, and that cannot be set from a link. `?next=` is the other
+   * one: the "Add a ground" buttons on /playgrounds have always linked to
+   * `/login?next=/playgrounds/new`, and nothing ever read it, so signing in
+   * from there dropped you on the home page instead of the form you asked for.
+   *
+   * It IS attacker-settable, though, being a query parameter — so it is only
+   * honoured when it is a plain internal path. A value beginning with two
+   * slashes, or with a backslash anywhere in it, is protocol-relative and
+   * would carry the user off the site; react-router has an open advisory about
+   * exactly that shape, and this is the one place in the whole app where a
+   * navigation target comes from a URL.
+   */
+  const redirectTo = location.state?.from?.pathname
+    || safeRedirect(params.get('next'), '/');
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');

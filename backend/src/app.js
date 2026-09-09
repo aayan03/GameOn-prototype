@@ -20,6 +20,26 @@ if (env.TRUST_PROXY) app.set('trust proxy', 1);
 
 app.disable('x-powered-by');
 
+/**
+ * Parse query strings with Node's own parser, not `qs`.
+ *
+ * Express 4 defaults to the extended parser, which is `qs`, and `qs` carries
+ * two open advisories with no fix inside Express 4 — an array-limit bypass via
+ * bracket-key comma parsing, and a denial of service through an
+ * attacker-controlled isBuffer. Both are reachable from any public URL,
+ * because every request has a query string whether it uses one or not.
+ *
+ * Nothing here needs the extended syntax. The API client builds every
+ * parameter with `searchParams.set` and joins arrays with commas, and every
+ * query schema takes flat strings and numbers — `amenities` and `ids` are
+ * comma-separated by design. So the simple parser is a straight subtraction of
+ * attack surface rather than a trade.
+ *
+ * `preventParamPollution` still collapses repeated keys, which the simple
+ * parser returns as arrays exactly as qs did.
+ */
+app.set('query parser', 'simple');
+
 // First in the chain: everything downstream logs against this id.
 app.use(requestId);
 

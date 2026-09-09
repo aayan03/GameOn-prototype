@@ -495,3 +495,43 @@ test('an admin token does not open the cron routes either', async () => {
   const res = await post('/api/cron/lifecycle', {}, { token: admin.token });
   assert.equal(res.status, 404, 'the shared secret is the only key to this door');
 });
+
+/* ── The query parser ────────────────────────────────────────── */
+
+test('bracket syntax does not build nested objects out of a query string', async () => {
+  // Express 4 defaults to `qs`, which carries two unfixed advisories reachable
+  // from any public URL. app.js switches to the simple parser; this pins that
+  // choice, because reverting it is a one-word change with no visible effect
+  // until somebody goes looking for the array-limit bypass.
+  const owner = await createUser({ role: 'owner' });
+  await createVenue(owner, { name: 'Parser Arena' });
+
+  for (const qs of [
+    'a[b]=c', 'a[]=1&a[]=2', 'x[0][y]=1',
+    `deep${'[a]'.repeat(60)}=1`,
+    `flood=${'a,'.repeat(4000)}`,
+  ]) {
+    const res = await get(`/api/venues?${qs}`);
+    assert.ok(res.status < 500, `${qs.slice(0, 40)} produced ${res.status}`);
+  }
+});
+
+test('the comma-separated filters the client actually sends still work', async () => {
+  // The flip side: the simple parser must not have broken the real callers.
+  const owner = await createUser({ role: 'owner' });
+  const venue = await createVenue(owner, {
+    name: 'Filterable Arena',
+    courts: [{ name: 'A', sport: 'football', pricePerHour: 900 }],
+  });
+
+  const byId = await get(`/api/venues?ids=${venue._id}`);
+  assert.equal(byId.status, 200);
+  assert.equal(byId.body.data.length, 1, 'the ids filter still resolves');
+
+  const byAmenity = await get('/api/venues?amenities=parking,floodlights');
+  assert.equal(byAmenity.status, 200, 'a CSV amenity list still parses');
+
+  const paged = await get('/api/venues?page=1&limit=5&sort=rating');
+  assert.equal(paged.status, 200);
+  assert.ok(Array.isArray(paged.body.data));
+});
