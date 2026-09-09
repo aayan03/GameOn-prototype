@@ -695,3 +695,107 @@ test('a booked slot still shows as taken on the right court only', async () => {
   assert.equal(b.slots.find((s) => s.start === slot.start).status, 'available',
     'the other court is untouched');
 });
+
+/* ── Cash at the gate is opt-in (GO-01) ──────────────────────── */
+
+test('pay-at-venue is refused unless the venue collects cash', async () => {
+  const { venue, player, date, slot } = await scenario();
+
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'pay_at_venue' }),
+    { token: player.token });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error.message, /does not take cash at the gate/i);
+
+  // And the slot is still free — a refused booking must not hold anything.
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const after = grid.body.data.courts[0].slots.find((s) => s.start === slot.start);
+  assert.equal(after.status, 'available');
+});
+
+test('pay-at-venue works once the venue has opted in', async () => {
+  const { venue, player, date, slot } = await scenario({
+    venue: { acceptsPayAtVenue: true },
+  });
+
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'pay_at_venue' }),
+    { token: player.token });
+
+  assert.equal(res.status, 201);
+  assert.equal(res.body.data.booking.payment.status, 'unpaid');
+});
+
+test('availability tells the booking screen whether cash is accepted', async () => {
+  const { venue, date } = await scenario();
+  const off = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  assert.equal(off.body.data.venue.acceptsPayAtVenue, false);
+
+  const s2 = await scenario({ venue: { acceptsPayAtVenue: true } });
+  const on = await get(`/api/venues/${s2.venue._id}/availability?date=${date}`);
+  assert.equal(on.body.data.venue.acceptsPayAtVenue, true);
+});
+
+/* ── One account cannot hold the whole catalogue (GO-01) ─────── */
+
+test('a player may not hold more than twelve unpaid slots', async () => {
+  const owner = await createUser({ role: 'owner' });
+  const player = await createUser({ role: 'player' });
+  // Manual, so every booking stays PENDING and unpaid while the owner sleeps.
+  const venue = await createVenue(owner, { bookingMode: 'manual' });
+  await fundWallet(player.id, 500000);
+  const date = dateKey(2);
+
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const open = grid.body.data.courts[0].slots.filter((s) => s.status === 'available');
+  assert.ok(open.length >= 14, 'the venue publishes enough slots for this test');
+
+  // Two six-slot requests reach the cap exactly.
+  for (const chunk of [open.slice(0, 6), open.slice(6, 12)]) {
+    const res = await post('/api/bookings', {
+      venueId: venue._id, courtId: grid.body.data.courts[0].courtId, date,
+      starts: chunk.map((s) => s.start), paymentMethod: 'wallet',
+    }, { token: player.token });
+    assert.equal(res.status, 201);
+  }
+
+  const over = await post('/api/bookings', {
+    venueId: venue._id, courtId: grid.body.data.courts[0].courtId, date,
+    starts: [open[12].start], paymentMethod: 'wallet',
+  }, { token: player.token });
+
+  assert.equal(over.status, 400);
+  assert.match(over.body.error.message, /unpaid slot/i);
+});
+
+test('paying for held slots frees the allowance again', async () => {
+  const owner = await createUser({ role: 'owner' });
+  const player = await createUser({ role: 'player' });
+  const venue = await createVenue(owner, { bookingMode: 'manual' });
+  await fundWallet(player.id, 500000);
+  const date = dateKey(2);
+
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const courtId = grid.body.data.courts[0].courtId;
+  const open = grid.body.data.courts[0].slots.filter((s) => s.status === 'available');
+
+  const first = await post('/api/bookings', {
+    venueId: venue._id, courtId, date,
+    starts: open.slice(0, 6).map((s) => s.start), paymentMethod: 'wallet',
+  }, { token: player.token });
+  assert.equal(first.status, 201);
+
+  // The owner confirms, which collects the money — those slots stop counting.
+  await patch(`/api/bookings/${first.body.data.booking.groupRef}/decision`,
+    { decision: 'confirm' }, { token: owner.token });
+
+  for (const chunk of [open.slice(6, 12), open.slice(12, 18)]) {
+    const res = await post('/api/bookings', {
+      venueId: venue._id, courtId, date,
+      starts: chunk.map((s) => s.start), paymentMethod: 'wallet',
+    }, { token: player.token });
+    assert.equal(res.status, 201, 'settled slots no longer count against the cap');
+  }
+});
+

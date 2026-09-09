@@ -543,6 +543,17 @@ were made is more useful than a claim that none were.
       between instances, so move to a shared store (Redis) before running more
       than one dyno. The per-account defences — login throttle, reset cooldown,
       promo claims, every wallet check — are all in MongoDB and unaffected.
+- [ ] Cash at the gate is OFF for every venue by default
+      (`acceptsPayAtVenue`). Turn it on per venue, from the owner's settings
+      screen, only for venues that genuinely collect cash — a pay-at-venue
+      booking reserves a slot with no money moving, so it is the one method
+      that can hold inventory for free. Unsettled cash bookings give the slot
+      back an hour before kickoff (`GATE_CASH_GRACE_MS` in
+      `services/lifecycle.service.js`).
+- [ ] One account may hold at most 12 unpaid slots at a time
+      (`MAX_UNSETTLED_SLOTS` in `controllers/booking.controller.js`). Raise it
+      if you take group bookings that legitimately sit unpaid; lowering it
+      tightens the ceiling on how much inventory one person can tie up.
 
 ---
 

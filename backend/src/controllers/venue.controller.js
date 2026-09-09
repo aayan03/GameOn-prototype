@@ -69,6 +69,9 @@ export const createVenueSchema = z.object({
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   slotDurationMins: z.union([z.literal(30), z.literal(60), z.literal(90), z.literal(120)]).optional(),
+  // Cash at the gate, off unless the owner says otherwise. See the note on
+  // Venue.acceptsPayAtVenue for why the default matters.
+  acceptsPayAtVenue: z.boolean().optional(),
   cancellationPolicy: z.object({
     freeCancellationHours: z.number().min(0).optional(),
     partialRefundHours: z.number().min(0).optional(),

@@ -217,6 +217,78 @@ async function expireUnpaidHolds(now) {
   return { holdsReleased: released };
 }
 
+/**
+ * How long before kickoff an unsettled cash booking gives the slot back.
+ *
+ * Cash at the gate is the one method where a booking can sit confirmed with
+ * nothing paid, indefinitely — `expireUnpaidHolds` above only ever looked at
+ * abandoned gateway checkouts, so these were never released at all. That made
+ * a free, permanent hold on any court: book every slot at every venue as
+ * pay-at-venue and the catalogue reads as sold out while no money has moved.
+ *
+ * An hour is late enough that a genuine player who intends to pay at the gate
+ * keeps their slot right up to the point they would be setting off, and early
+ * enough that a released slot can still be taken by somebody else.
+ */
+const GATE_CASH_GRACE_MS = 60 * 60 * 1000;
+
+/**
+ * Release cash bookings nobody settled, shortly before they were due to play.
+ *
+ * Deliberately NOT scoped to a booking mode. Automated venues write these
+ * CONFIRMED and manual venues leave them PENDING, and both hold the slot the
+ * same way — filtering on mode is how the original hold reaper missed this
+ * entire class in the first place.
+ *
+ * Nothing is refunded, because `payment.status: 'unpaid'` is in the filter. A
+ * booking the owner already settled has moved to 'paid' and is never matched.
+ */
+async function expireUnsettledGateCash(now) {
+  const cutoff = new Date(now.getTime() + GATE_CASH_GRACE_MS);
+
+  const stale = await Booking.find({
+    status: { $in: [BOOKING_STATUS.PENDING, BOOKING_STATUS.CONFIRMED] },
+    'payment.method': 'pay_at_venue',
+    'payment.status': 'unpaid',
+    slotLocked: true,
+    startsAt: { $lte: cutoff },
+  })
+    .select('_id user groupRef venue')
+    .limit(500)
+    .lean();
+
+  if (!stale.length) return { gateCashReleased: 0 };
+
+  const groups = [...new Set(stale.map((b) => b.groupRef))];
+  let released = 0;
+
+  for (const groupRef of groups) {
+    // Conditional on still being unpaid, so an owner tapping Settle in the
+    // same moment wins and their customer keeps the slot.
+    const result = await Booking.updateMany(
+      {
+        groupRef,
+        status: { $in: [BOOKING_STATUS.PENDING, BOOKING_STATUS.CONFIRMED] },
+        'payment.status': 'unpaid',
+      },
+      { $set: { status: BOOKING_STATUS.EXPIRED, slotLocked: false } }
+    );
+    if (!result.modifiedCount) continue;
+    released += result.modifiedCount;
+
+    const first = stale.find((b) => b.groupRef === groupRef);
+    const venue = await Venue.findById(first.venue).select('name').lean();
+    await notify.notify(first.user, 'booking_cancelled', {
+      title: 'Your slot was released',
+      body: `${venue?.name || 'The venue'} had not recorded your payment, so the slot has gone `
+        + 'back to them. Nothing was charged. Book again if it is still free, or pay online next time.',
+      link: '/bookings',
+    }).catch(() => {});
+  }
+
+  return { gateCashReleased: released };
+}
+
 async function expireStaleRequests(now) {
   const cutoff = new Date(now.getTime() + 2 * 3600 * 1000);
   const oldEnough = new Date(now.getTime() - MIN_REQUEST_AGE_MS);
@@ -458,6 +530,7 @@ export async function runLifecycle() {
       complete: completeFinishedBookings,
       expire: expireStaleRequests,
       holds: expireUnpaidHolds,
+      gateCash: expireUnsettledGateCash,
       remind: sendReminders,
       reliability: settleReliability,
     })) {
@@ -484,7 +557,8 @@ export function startLifecycleScheduler(intervalMinutes = 15) {
   const tick = async () => {
     try {
       const r = await runLifecycle();
-      if (r.completed || r.expired || r.reminders || r.settled) {
+      if (r.completed || r.expired || r.reminders || r.settled
+        || r.holdsReleased || r.gateCashReleased) {
         logger.info('lifecycle run', r);
       }
     } catch (err) {

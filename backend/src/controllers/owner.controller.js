@@ -115,6 +115,8 @@ export const venueSettingsSchema = z.object({
   })).length(7).optional(),
   slotDurationMins: z.union([z.literal(30), z.literal(60), z.literal(90), z.literal(120)]).optional(),
   advanceBookingDays: z.number().int().min(1).max(90).optional(),
+  // Off unless the owner turns it on — see the note on Venue.acceptsPayAtVenue.
+  acceptsPayAtVenue: z.boolean().optional(),
   cancellationPolicy: z.object({
     freeCancellationHours: z.number().min(0).max(168),
     partialRefundHours: z.number().min(0).max(168),

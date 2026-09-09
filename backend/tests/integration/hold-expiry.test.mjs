@@ -22,7 +22,10 @@ after(stopTestServer);
 beforeEach(resetDatabase);
 
 /** A gateway checkout that was started and never finished. */
-async function unpaidHold({ minutesAgo = 15, mode = 'automated', method = 'gateway' } = {}) {
+async function unpaidHold({
+  minutesAgo = 15, mode = 'automated', method = 'gateway',
+  status = 'pending', startsInMinutes = null,
+} = {}) {
   const { Booking, Venue, User } = await import('../../src/models/index.js');
   const owner = await createUser({ role: 'owner', email: `o${Math.random()}@test.local` });
   await setVerified(owner.id);
@@ -39,7 +42,9 @@ async function unpaidHold({ minutesAgo = 15, mode = 'automated', method = 'gatew
 
   // Far enough ahead that the existing two-hour sweep cannot claim it — this
   // is the case that used to be held indefinitely.
-  const starts = new Date(Date.now() + 6 * 864e5);
+  const starts = startsInMinutes === null
+    ? new Date(Date.now() + 6 * 864e5)
+    : new Date(Date.now() + startsInMinutes * 60 * 1000);
   const createdAt = new Date(Date.now() - minutesAgo * 60 * 1000);
 
   const booking = await Booking.create({
@@ -49,7 +54,7 @@ async function unpaidHold({ minutesAgo = 15, mode = 'automated', method = 'gatew
     startMinutes: 600, endMinutes: 660,
     startsAt: starts, endsAt: new Date(starts.getTime() + 36e5),
     amount: 900, totalAmount: 927,
-    status: 'pending', slotLocked: true,
+    status, slotLocked: true,
     payment: { method, status: 'unpaid', orderId: 'order_test123' },
     groupRef: `grp_${Math.random().toString(36).slice(2, 10)}`,
   });
@@ -157,4 +162,70 @@ test('sweeping twice releases nothing the second time', async () => {
   await unpaidHold({ minutesAgo: 15 });
   assert.equal((await runLifecycle()).holdsReleased, 1);
   assert.equal((await runLifecycle()).holdsReleased || 0, 0);
+});
+
+/* ── Cash at the gate that nobody settled (GO-01) ─────────────── */
+
+/**
+ * A pay-at-venue booking is the one shape that could sit CONFIRMED with
+ * nothing paid, forever: the gateway sweep above filters on
+ * `payment.method: 'gateway'`, and the stale-request sweep only ever looks at
+ * PENDING rows. Between them, an automated venue's cash booking was never
+ * released — which made it a free, permanent hold on any court in the
+ * catalogue.
+ */
+test('an unsettled cash booking is released an hour before kickoff', async () => {
+  const { booking } = await unpaidHold({
+    method: 'pay_at_venue', status: 'confirmed', startsInMinutes: 45,
+  });
+  const { Booking } = await import('../../src/models/index.js');
+
+  const res = await runLifecycle();
+  assert.equal(res.gateCashReleased, 1);
+
+  const after = await Booking.findById(booking._id).lean();
+  assert.equal(after.status, 'expired');
+  assert.equal(after.slotLocked, false, 'the slot goes back to the venue');
+});
+
+test('a cash booking still hours away keeps its slot', async () => {
+  const { booking } = await unpaidHold({
+    method: 'pay_at_venue', status: 'confirmed', startsInMinutes: 5 * 60,
+  });
+  const { Booking } = await import('../../src/models/index.js');
+
+  const res = await runLifecycle();
+  assert.equal(res.gateCashReleased || 0, 0);
+  assert.equal((await Booking.findById(booking._id).lean()).status, 'confirmed');
+});
+
+test('cash the owner already recorded is never released', async () => {
+  const { booking } = await unpaidHold({
+    method: 'pay_at_venue', status: 'confirmed', startsInMinutes: 20,
+  });
+  const { Booking } = await import('../../src/models/index.js');
+
+  // The owner tapped Settle — this is money that actually changed hands.
+  await Booking.updateOne({ _id: booking._id }, {
+    $set: { 'payment.status': 'paid', 'payment.amountPaid': 927 },
+  });
+
+  const res = await runLifecycle();
+  assert.equal(res.gateCashReleased || 0, 0);
+
+  const after = await Booking.findById(booking._id).lean();
+  assert.equal(after.status, 'confirmed', 'a settled booking is left alone');
+  assert.equal(after.slotLocked, true);
+});
+
+test('a manual venue\'s unsettled cash request is released too', async () => {
+  // Manual venues leave these PENDING rather than CONFIRMED. Filtering the
+  // sweep by booking mode is exactly how the original reaper missed a class.
+  const { booking } = await unpaidHold({
+    mode: 'manual', method: 'pay_at_venue', status: 'pending', startsInMinutes: 30,
+  });
+  const { Booking } = await import('../../src/models/index.js');
+
+  await runLifecycle();
+  assert.equal((await Booking.findById(booking._id).lean()).status, 'expired');
 });

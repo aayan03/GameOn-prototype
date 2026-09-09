@@ -239,6 +239,10 @@ export async function createVenue(owner, overrides = {}) {
     address: { city: 'Bengaluru', area: 'Koramangala' },
     ...(overrides.cancellationPolicy ? { cancellationPolicy: overrides.cancellationPolicy } : {}),
     ...(overrides.manualContact ? { manualContact: overrides.manualContact } : {}),
+    // Left OFF by default, exactly as production is, so a test that books
+    // with cash has to opt in the same way a real venue does.
+    ...(overrides.acceptsPayAtVenue !== undefined
+      ? { acceptsPayAtVenue: overrides.acceptsPayAtVenue } : {}),
   }, { token: owner.token });
 
   if (res.status !== 201) {

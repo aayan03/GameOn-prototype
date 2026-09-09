@@ -90,6 +90,21 @@ const venueSchema = new mongoose.Schema(
     },
     slotDurationMins: { type: Number, default: 60, enum: [30, 60, 90, 120] },
 
+    /**
+     * Does this venue take cash at the gate?
+     *
+     * Off by default, and that default is the whole point. A pay-at-venue
+     * booking reserves a slot without any money moving, so while it was
+     * accepted at every venue unconditionally, anyone could confirm slots for
+     * free — and nothing released them, because the hold reaper only looked at
+     * abandoned gateway checkouts. One account could lock every court in the
+     * city and keep them locked.
+     *
+     * An owner who genuinely collects cash turns this on and accepts the
+     * trade: those bookings expire an hour before kickoff unless settled.
+     */
+    acceptsPayAtVenue: { type: Boolean, default: false },
+
     // Cancellation policy — enforced by the booking service in Phase 2.
     cancellationPolicy: {
       freeCancellationHours: { type: Number, default: 24 },  // full refund before this

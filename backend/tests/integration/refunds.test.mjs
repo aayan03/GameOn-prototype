@@ -59,11 +59,12 @@ function stubRazorpay() {
 
 /* ── Fixtures ────────────────────────────────────────────────── */
 
-async function scenario({ balance = 50000, mode = 'automated' } = {}) {
+async function scenario({ balance = 50000, mode = 'automated', acceptsPayAtVenue = false } = {}) {
   const owner = await createUser({ role: 'owner' });
   const player = await createUser({ role: 'player' });
   const venue = await createVenue(owner, {
     bookingMode: mode,
+    acceptsPayAtVenue,
     // The booking is 3 days (72h) out. A 24h free window means every test
     // below is a 100% refund, so the arithmetic stays about the DESTINATION
     // rather than the percentage.
@@ -210,7 +211,7 @@ test('a wallet booking still refunds to the wallet', async () => {
 
 test('a pay-at-venue booking refunds nothing through us', async () => {
   stubRazorpay();
-  const s = await scenario({ mode: 'manual' });
+  const s = await scenario({ mode: 'manual', acceptsPayAtVenue: true });
   const created = await book(s, 'pay_at_venue');
   const { groupRef } = created.body.data.booking;
 

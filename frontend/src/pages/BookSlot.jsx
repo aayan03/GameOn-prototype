@@ -454,17 +454,26 @@ export default function BookSlot() {
                     </button>
                   )}
 
-                  <button
-                    className={`pay-opt${payMethod === 'pay_at_venue' ? ' active' : ''}`}
-                    onClick={() => setPayMethod('pay_at_venue')}
-                  >
-                    <span className="pay-icon">💵</span>
-                    <span className="grow">
-                      <strong style={{ display: 'block' }}>Pay at the venue</strong>
-                      <span className="text-faint">Settle directly with the venue when you arrive</span>
-                    </span>
-                    {payMethod === 'pay_at_venue' && <IconCheck style={{ width: 20, height: 20 }} />}
-                  </button>
+                  {/* Only where the venue actually collects cash. The API
+                      rejects the method everywhere else, so offering it on
+                      every venue meant a button that reserved a slot without
+                      anyone paying for it. */}
+                  {venue?.acceptsPayAtVenue && (
+                    <button
+                      className={`pay-opt${payMethod === 'pay_at_venue' ? ' active' : ''}`}
+                      onClick={() => setPayMethod('pay_at_venue')}
+                    >
+                      <span className="pay-icon">💵</span>
+                      <span className="grow">
+                        <strong style={{ display: 'block' }}>Pay at the venue</strong>
+                        <span className="text-faint">
+                          Settle directly with the venue when you arrive. The slot is released
+                          an hour before kickoff if they have not recorded your payment.
+                        </span>
+                      </span>
+                      {payMethod === 'pay_at_venue' && <IconCheck style={{ width: 20, height: 20 }} />}
+                    </button>
+                  )}
                 </div>
 
                 {payMethod === 'gateway' && gateway?.keyId?.startsWith('rzp_test_') && (

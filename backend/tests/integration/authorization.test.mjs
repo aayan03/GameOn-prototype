@@ -122,7 +122,7 @@ test('an owner cannot settle cash on a booking at someone else\'s venue', async 
   const a = await createUser({ role: 'owner' });
   const b = await createUser({ role: 'owner' });
   const player = await createUser({ role: 'player' });
-  const venueA = await createVenue(a);
+  const venueA = await createVenue(a, { acceptsPayAtVenue: true });
   await fundWallet(player.id, 20000);
 
   const date = dateKey(2);

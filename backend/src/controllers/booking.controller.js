@@ -61,6 +61,15 @@ export const decisionSchema = z.object({
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
+/**
+ * How many slots one account may hold unpaid at any moment.
+ *
+ * Twelve is two full six-slot bookings, which is more than a real player ever
+ * has outstanding — an unpaid slot is either a manual venue that has not
+ * answered yet or a checkout in progress, and neither state lasts.
+ */
+const MAX_UNSETTLED_SLOTS = 12;
+
 async function loadVenueAndCourt(venueId, courtId) {
   if (!mongoose.isValidObjectId(venueId)) throw ApiError.badRequest('Invalid venue id');
   const venue = await Venue.findById(venueId);
@@ -168,6 +177,9 @@ export const getAvailability = asyncHandler(async (req, res) => {
       cancellationPolicy: venue.cancellationPolicy,
       manualContact: venue.manualContact,
       address: venue.address,
+      // The booking screen offers "pay at the venue" only where the venue
+      // actually collects it; the API rejects it everywhere else.
+      acceptsPayAtVenue: Boolean(venue.acceptsPayAtVenue),
     },
     courts: grids,
   });
@@ -207,6 +219,44 @@ export const quote = asyncHandler(async (req, res) => {
 export const createBooking = asyncHandler(async (req, res) => {
   const { venueId, courtId, date, starts, promoCode, players = 1, notes = '', paymentMethod } = req.body;
   const { venue, court } = await loadVenueAndCourt(venueId, courtId);
+
+  /**
+   * Cash at the gate is opt-in, per venue.
+   *
+   * This method reserves a slot with no money moving at all, so accepting it
+   * everywhere meant a free, unlimited hold on any court in the catalogue.
+   * The venue has to say it actually collects cash before anyone can book
+   * that way. See the note on Venue.acceptsPayAtVenue.
+   */
+  if (paymentMethod === 'pay_at_venue' && !venue.acceptsPayAtVenue) {
+    throw ApiError.badRequest('This venue does not take cash at the gate. Pay from your wallet, or by card or UPI.');
+  }
+
+  /**
+   * A cap on how many unsettled slots one account may hold at once.
+   *
+   * Every individual guard below is about correctness — the right price, the
+   * right promo, no double-booking. None of them bounds VOLUME, and volume is
+   * the whole attack: hold every slot at every venue and the catalogue reads
+   * as sold out while nobody has paid a rupee. The per-IP write limiter does
+   * not help, because it is per IP and this is per account.
+   *
+   * Counted in slot-documents rather than groups, since that is what actually
+   * occupies the grid. Generous enough that a regular player booking a few
+   * fixtures ahead never meets it.
+   */
+  const heldSlots = await Booking.countDocuments({
+    user: req.user._id,
+    slotLocked: true,
+    'payment.status': { $ne: 'paid' },
+    endsAt: { $gte: new Date() },
+  });
+  if (heldSlots + starts.length > MAX_UNSETTLED_SLOTS) {
+    throw ApiError.badRequest(
+      `You already have ${heldSlots} unpaid slot${heldSlots === 1 ? '' : 's'} held. `
+      + 'Pay for those or cancel them before booking more.'
+    );
+  }
 
   // Re-priced server-side at booking time with the promo re-checked, so a
   // quote taken before a code was exhausted cannot be replayed.
