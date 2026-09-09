@@ -247,7 +247,14 @@ export const verify = asyncHandler(async (req, res) => {
   if (!fresh?.pointsAwarded) {
     const pts = loyalty.pointsForSpend(expected, req.user.loyaltyTier);
     award = await loyalty.award(req.user, pts, { reason: 'Booking payment', booking: rows[0] });
-    await Booking.updateMany({ groupRef }, { $set: { pointsAwarded: pts } });
+    // On ONE row, not all of them — the same rule as createBooking, and the
+    // same reason. Cancellation sums `pointsAwarded` across the group's rows,
+    // so writing the group total onto every slot made a 3-slot booking that
+    // earned 90 points claw back 270: enough to delete points earned on other
+    // bookings, drop the customer a loyalty tier, and — where the balance
+    // could not cover it — quietly shrink their cash refund by the shortfall.
+    // Row 0 is also what the guard above reads, so the two stay in step.
+    await Booking.updateOne({ _id: rows[0]._id }, { $set: { pointsAwarded: pts } });
     await Venue.updateOne({ _id: rows[0].venue }, { $inc: { bookingCount: rows.length } });
   }
 
@@ -317,7 +324,8 @@ export const webhook = asyncHandler(async (req, res) => {
           if (user) {
             const pts = loyalty.pointsForSpend(expected, user.loyaltyTier);
             await loyalty.award(user, pts, { reason: 'Booking payment', booking: rows[0] });
-            await Booking.updateMany({ groupRef }, { $set: { pointsAwarded: pts } });
+            // One row, for the reason given on the same write in /verify above.
+            await Booking.updateOne({ _id: rows[0]._id }, { $set: { pointsAwarded: pts } });
           }
         }
         await Venue.updateOne({ _id: rows[0].venue }, { $inc: { bookingCount: rows.length } });
