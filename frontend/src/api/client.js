@@ -10,7 +10,20 @@
 import { secureStorage } from '../utils/platform.js';
 
 const RAW_BASE = import.meta.env.VITE_API_URL || '';
-export const API_BASE = RAW_BASE ? `${RAW_BASE.replace(/\/$/, '')}/api` : '/api';
+
+/**
+ * The API version this build speaks.
+ *
+ * Kept as its own constant rather than inlined, because the whole point of a
+ * version prefix is that moving to the next one is a deliberate, visible edit
+ * — and because a Capacitor build bakes this in and ships it to a phone that
+ * may not be updated for months. The server still answers on the unversioned
+ * `/api` for exactly that reason; this is what new builds should ask for.
+ */
+export const API_VERSION = 'v1';
+export const API_BASE = RAW_BASE
+  ? `${RAW_BASE.replace(/\/$/, '')}/api/${API_VERSION}`
+  : `/api/${API_VERSION}`;
 
 // Same-origin `/api` is correct in development, where Vite proxies it, and in
 // the Docker stack, where nginx proxies it. On a static host like Vercel or

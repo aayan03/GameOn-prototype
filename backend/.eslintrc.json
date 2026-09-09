@@ -25,6 +25,10 @@
       "rules": { "no-console": "off" }
     },
     {
+      "files": ["scripts/**/*.mjs"],
+      "rules": { "no-console": "off" }
+    },
+    {
       "files": ["src/seed/**/*.js", "src/config/env.js", "src/config/db.js"],
       "rules": { "no-console": "off" }
     }

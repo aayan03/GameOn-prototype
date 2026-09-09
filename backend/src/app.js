@@ -114,8 +114,10 @@ app.use(cors({
 // Mounted BEFORE express.json(). The Razorpay signature is an HMAC over the
 // exact bytes that were sent; re-serialising parsed JSON changes key order
 // and whitespace, and the signature would never match again.
+// Both paths, because this URL is configured in the Razorpay dashboard rather
+// than by us. See the note on API_PREFIXES below.
 app.post(
-  '/api/payments/webhook',
+  ['/api/v1/payments/webhook', '/api/payments/webhook'],
   webhookLimiter,
   express.raw({ type: 'application/json', limit: '128kb' }),
   (req, res, next) => import('./controllers/payment.controller.js')
@@ -143,10 +145,28 @@ app.get('/', (req, res) => res.json({
   name: 'GameOn API',
   tagline: 'Find. Book. Play.',
   version: '3.0.0',
-  health: '/api/health',
+  apiVersion: 'v1',
+  base: '/api/v1',
+  health: '/api/v1/health',
 }));
 
-app.use('/api', routes);
+/**
+ * Every route, mounted twice.
+ *
+ * `/api/v1` is the address to build against. `/api` is the same router under
+ * its old name, and it has to keep working: the app is wrapped with Capacitor,
+ * which bakes VITE_API_URL in at build time, so an installed phone keeps
+ * calling whatever path it was compiled with until its owner updates. The same
+ * is true of the two URLs configured outside this codebase — the Razorpay
+ * webhook and whatever scheduler pokes /api/cron/lifecycle.
+ *
+ * Adding the prefix costs a line today. Not having one costs a coordinated
+ * release with every installed client the first time a response shape has to
+ * change, which is the situation this exists to avoid. When v2 arrives, mount
+ * it alongside and leave both of these exactly where they are.
+ */
+const API_PREFIXES = ['/api/v1', '/api'];
+app.use(API_PREFIXES, routes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

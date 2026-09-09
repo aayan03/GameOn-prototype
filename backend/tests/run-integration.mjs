@@ -33,7 +33,18 @@ if (!files.length) {
   process.exit(1);
 }
 
-const child = spawn(process.execPath, ['--test', ...files], {
+/**
+ * `--coverage` turns on Node's own coverage reporter.
+ *
+ * Passed through here rather than baked into the npm script so the plain run
+ * stays fast: coverage instrumentation roughly doubles the wall time of this
+ * suite, and the common case is somebody running it to see whether they broke
+ * something.
+ */
+const wantCoverage = process.argv.includes('--coverage');
+const nodeFlags = wantCoverage ? ['--experimental-test-coverage'] : [];
+
+const child = spawn(process.execPath, [...nodeFlags, '--test', ...files], {
   stdio: 'inherit',
   cwd: resolve(here, '..'),
 });

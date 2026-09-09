@@ -57,6 +57,15 @@ jobs:
         working-directory: backend
         run: npm run test:integration
 
+      # One matrix leg only. Coverage instrumentation roughly doubles the wall
+      # time of this suite, and the number does not differ between Node 20 and
+      # 22 or between server timezones — running it on every leg would pay for
+      # the same answer four times over.
+      - name: Coverage floor
+        if: matrix.node-version == 22 && matrix.tz == 'UTC'
+        working-directory: backend
+        run: npm run coverage
+
       - name: Boot check
         working-directory: backend
         env:

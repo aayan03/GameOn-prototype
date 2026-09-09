@@ -535,3 +535,29 @@ test('the comma-separated filters the client actually sends still work', async (
   assert.equal(paged.status, 200);
   assert.ok(Array.isArray(paged.body.data));
 });
+
+/* ── API versioning ──────────────────────────────────────────── */
+
+test('every route answers on both /api/v1 and the unversioned /api', async () => {
+  // The unversioned prefix is not deprecated decoration. A Capacitor build
+  // bakes its base URL in and ships it to a phone; the Razorpay webhook URL
+  // and the cron scheduler's URL both live outside this repository. All three
+  // keep calling /api until somebody changes them somewhere else.
+  const user = await createUser();
+
+  for (const path of ['/health', '/config', '/auth/me']) {
+    const versioned = await get(`/api/v1${path}`, { token: user.token });
+    const legacy = await get(`/api${path}`, { token: user.token });
+    assert.equal(versioned.status, legacy.status, `status differs for ${path}`);
+    assert.equal(versioned.status < 400, true, `${path} answered ${versioned.status}`);
+  }
+});
+
+test('the root document points callers at the current version', async () => {
+  const res = await get('/');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.apiVersion, 'v1');
+  assert.equal(res.body.base, '/api/v1');
+  // The advertised health path must actually be a health path.
+  assert.equal((await get(res.body.health)).status, 200);
+});

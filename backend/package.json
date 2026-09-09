@@ -1,7 +1,7 @@
 {
   "name": "gameon-backend",
   "version": "4.0.0",
-  "description": "GameOn \u2014 sports venue booking, TeamUp and loyalty API",
+  "description": "GameOn — sports venue booking, TeamUp and loyalty API",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -14,12 +14,14 @@
     "check": "node tests/load.test.mjs",
     "test:unit": "node --test tests/boot.test.mjs && node tests/load.test.mjs && node --test tests/time.test.mjs && node --test tests/payout.test.mjs && node tests/booking.test.mjs && node tests/loyalty.test.mjs && node tests/phase4.test.mjs && node tests/phase5.test.mjs && node tests/email.test.mjs",
     "test:integration": "node tests/run-integration.mjs",
-    "lint": "eslint src tests",
-    "lint:fix": "eslint src tests --fix",
+    "lint": "eslint src tests scripts",
+    "lint:fix": "eslint src tests scripts --fix",
     "check:email": "node scripts/check-email.mjs",
     "fix:indexes": "node scripts/fix-text-index.mjs",
     "purge:demo": "node scripts/purge-demo-data.mjs",
-    "make:admin": "node scripts/make-admin.mjs"
+    "make:admin": "node scripts/make-admin.mjs",
+    "coverage": "node scripts/coverage-gate.mjs",
+    "test:coverage": "node tests/run-integration.mjs --coverage"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

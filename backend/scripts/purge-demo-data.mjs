@@ -93,7 +93,7 @@ async function main() {
 
   /* ── Delete ────────────────────────────────────────────────── */
 
-  let removed = { users: 0, venues: 0, listings: 0 };
+  const removed = { users: 0, venues: 0, listings: 0 };
 
   if (realBookingsAtDemoVenues === 0 && demoIds.length) {
     // Everything that hangs off a demo account, so nothing is left pointing
