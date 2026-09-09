@@ -40,6 +40,11 @@ export async function optionalAuth(req, res, next) {
     const token = extractToken(req);
     if (token) {
       const decoded = verifyAccessToken(token);
+      // Same rule as `protect`. The two token families are signed with
+      // different secrets so this cannot currently pass, but the check being
+      // in one function and not the other reads as a disagreement about
+      // whether it matters.
+      if (decoded.type === 'refresh') return next();
       const user = await User.findById(decoded.sub);
       if (user?.isActive && (decoded.tv ?? 0) === (user.tokenVersion ?? 0)) req.user = user;
     }

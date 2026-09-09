@@ -295,6 +295,11 @@ async function expireStaleRequests(now) {
 
   const stale = await Booking.find({
     status: BOOKING_STATUS.PENDING,
+    // Manual venues only. An automated venue confirms instantly and never had
+    // a request to answer, so expiring one here told the player "Venue did
+    // not confirm in time" about a venue that was never asked. Those are
+    // handled by the two sweeps above, which name the real reason.
+    mode: BOOKING_MODES.MANUAL,
     startsAt: { $lte: cutoff },
     createdAt: { $lte: oldEnough },
   })

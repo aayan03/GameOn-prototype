@@ -20,7 +20,11 @@ router.get('/meta/cities', ctrl.playgroundCities);
 
 // Static paths before the /:idOrSlug catch-all, or "mine" reads as a slug.
 router.get('/mine', protect, ctrl.mySubmissions);
-router.get('/admin/queue', protect, restrictTo(ROLES.ADMIN), ctrl.playgroundQueue);
+router.get(
+  '/admin/queue',
+  protect, restrictTo(ROLES.ADMIN),
+  validate(ctrl.playgroundQueueSchema, 'query'), ctrl.playgroundQueue
+);
 
 router.post('/', protect, createLimiter, validate(ctrl.createPlaygroundSchema), ctrl.createPlayground);
 router.patch('/:id', protect, writeLimiter, validate(ctrl.updatePlaygroundSchema), ctrl.updatePlayground);

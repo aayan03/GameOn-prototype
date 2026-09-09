@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import mongoose from 'mongoose';
-import { Venue, Review, Booking } from '../models/index.js';
+import { Venue, Review, Booking, User } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { ok, created } from '../utils/response.js';
@@ -416,14 +416,54 @@ export const myVenues = asyncHandler(async (req, res) => {
 });
 
 /** POST /api/venues/:id/favorite — toggles. */
+/**
+ * A ceiling on saved venues.
+ *
+ * The array lives on the user document, so without one it grows until the
+ * document approaches Mongo's 16 MB limit and the account stops being able to
+ * save anything at all — including, because this used `save()` on the whole
+ * document, its own profile.
+ */
+const MAX_FAVORITES = 200;
+
 export const toggleFavorite = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  if (!await Venue.exists({ _id: id })) throw ApiError.notFound('Venue not found');
-  const idx = req.user.favorites.findIndex((f) => f.toString() === id);
-  if (idx >= 0) req.user.favorites.splice(idx, 1);
-  else req.user.favorites.push(id);
-  await req.user.save();
-  return ok(res, { isFavorite: idx < 0, favorites: req.user.favorites });
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('Invalid venue id');
+
+  // Only a venue somebody can actually visit. `listVenues` applies both halves
+  // of this gate; saving bypassed it, so a pending or unlisted venue could sit
+  // in a favourites list pointing at a page that 404s.
+  const venue = await Venue.exists({
+    _id: id, isActive: true, moderationStatus: { $nin: ['pending', 'rejected'] },
+  });
+  if (!venue) throw ApiError.notFound('Venue not found');
+
+  const isFavorite = req.user.favorites.some((f) => f.toString() === id);
+
+  if (!isFavorite && req.user.favorites.length >= MAX_FAVORITES) {
+    throw ApiError.badRequest(
+      `You can save up to ${MAX_FAVORITES} venues. Remove one to make room.`
+    );
+  }
+
+  /**
+   * $addToSet / $pull rather than a full-document save().
+   *
+   * Two taps in quick succession both read the same array, both wrote the
+   * whole document back, and the second overwrote the first — along with any
+   * other field that had changed in between. These operators touch one field
+   * and are idempotent, so the race stops existing.
+   */
+  const updated = await User.findByIdAndUpdate(
+    req.user._id,
+    isFavorite ? { $pull: { favorites: id } } : { $addToSet: { favorites: id } },
+    { new: true }
+  ).select('favorites').lean();
+
+  // Keep the in-memory user in step, since later middleware may read it.
+  req.user.favorites = updated.favorites;
+
+  return ok(res, { isFavorite: !isFavorite, favorites: updated.favorites });
 });
 
 /** GET /api/venues/meta/cities — powers the city dropdown. */

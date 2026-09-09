@@ -136,8 +136,16 @@ export async function buildAvailability(venue, court, dateKey, taken = null) {
   for (let start = open; start + slotMins <= close; start += slotMins) {
     const { amount, isPeak: peak } = priceFor(court, dateKey, start, slotMins);
     const heldBy = takenStarts.get(start);
-    // A 15-minute grace period stops a slot vanishing the second it starts.
-    const isPast = isToday && start < nowMins - 15;
+    /**
+     * A slot that has started is no longer bookable.
+     *
+     * There used to be a fifteen-minute grace here, described as stopping a
+     * slot "vanishing the second it starts". It did not make the slot vanish
+     * either way — the grid renders a past slot greyed out with "This slot
+     * has passed" — so all it actually bought was fourteen minutes in which
+     * somebody could book a game that was already underway.
+     */
+    const isPast = isToday && start < nowMins;
 
     const blocked = isBlackedOut(venue, court, dateKey, start);
 

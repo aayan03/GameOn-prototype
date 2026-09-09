@@ -432,8 +432,17 @@ export const suggestCorrection = asyncHandler(async (req, res) => {
 
 /* ── Admin ────────────────────────────────────────────────────── */
 
+export const playgroundQueueSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected', 'all']).optional(),
+}).strict();
+
 export const playgroundQueue = asyncHandler(async (req, res) => {
-  const status = req.query.status || 'pending';
+  // `req.validatedQuery`, like every other handler. This was the one place
+  // still reading req.query straight into a Mongo match — not exploitable,
+  // because it is admin-only and mongoSanitize strips operator keys upstream,
+  // but it is the one spot where a future edit could reintroduce operator
+  // injection with no visible break from the pattern everything else follows.
+  const { status = 'pending' } = req.validatedQuery || {};
   const match = status === 'all' ? {} : { moderationStatus: status };
   const rows = await Playground.find(match)
     .populate('submittedBy', 'name email')

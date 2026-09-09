@@ -27,6 +27,15 @@ const MAX_SHARE_PER_PERSON = 3000;
  */
 const MAX_POOL_PER_POST = 25000;
 
+/**
+ * How long after kickoff a host may still collect everyone's share.
+ *
+ * `settleCosts` moves money out of other people's wallets on one person's
+ * say-so. It refuses to run before kickoff for reasons documented there; this
+ * is the other end of the same window.
+ */
+const SETTLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 const numeric = (schema) => z.preprocess(
   (v) => (v === '' || v === undefined ? undefined : Number(v)), schema
 );
@@ -776,6 +785,21 @@ export const settleCosts = asyncHandler(async (req, res) => {
   if (new Date(post.playAt) > new Date()) {
     throw ApiError.badRequest(
       'You can collect everyone\'s share once the game has started, not before.'
+    );
+  }
+
+  /**
+   * And not indefinitely afterwards.
+   *
+   * There was a floor on this and no ceiling, so a host could debit everyone
+   * who played a game months later, out of wallets those players had since
+   * topped up for something else. A week is long enough for a host who forgot
+   * on the night, and short enough that nobody is surprised by it.
+   */
+  if (Date.now() - new Date(post.playAt).getTime() > SETTLE_WINDOW_MS) {
+    throw ApiError.badRequest(
+      'This game is too old to settle. Costs have to be collected within a week of kickoff — '
+      + 'sort it out with the players directly.'
     );
   }
 
