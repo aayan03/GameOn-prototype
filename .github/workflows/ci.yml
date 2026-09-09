@@ -42,6 +42,12 @@ jobs:
         working-directory: backend
         run: npm run lint
 
+      # Per-file opt-in via `// @ts-check`, so this is green from the day it
+      # was added and only ever gets stricter. See jsconfig.json.
+      - name: Typecheck
+        working-directory: backend
+        run: npm run typecheck
+
       # `node --check` only parses; a module that throws while EVALUATING
       # passes every syntax check and still takes the whole API down at boot.
       # See tests/load.test.mjs.

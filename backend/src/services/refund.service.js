@@ -1,3 +1,4 @@
+// @ts-check
 import { Booking } from '../models/index.js';
 import * as payments from './payment.service.js';
 import * as wallet from './wallet.service.js';

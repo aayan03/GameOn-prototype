@@ -1,3 +1,4 @@
+// @ts-check
 import crypto from 'crypto';
 import env from '../config/env.js';
 import ApiError from '../utils/ApiError.js';
@@ -39,6 +40,19 @@ function authHeader() {
   return `Basic ${token}`;
 }
 
+/**
+ * One authenticated call to Razorpay's REST API.
+ *
+ * @param {string} path            e.g. '/orders' or '/payments/pay_123/refund'
+ * @param {object} [options]
+ * @param {string} [options.method] HTTP verb; defaults to POST
+ * @param {object} [options.body]   JSON body, omitted entirely for a GET
+ * @returns {Promise<any>} the parsed response
+ *
+ * The annotation is not decoration. Without it `body` has no default, so its
+ * type is inferred as absent and every caller that passes one is a type error
+ * — which is exactly what the checker said when this file opted in.
+ */
 async function razorpay(path, { method = 'POST', body } = {}) {
   let res;
   try {

@@ -1,3 +1,4 @@
+// @ts-check
 import { Transaction, User } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 

@@ -1,3 +1,4 @@
+// @ts-check
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import env from '../config/env.js';

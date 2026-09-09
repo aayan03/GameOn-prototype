@@ -1,3 +1,4 @@
+// @ts-check
 import ApiError from '../utils/ApiError.js';
 import { User } from '../models/index.js';
 import { verifyAccessToken } from '../services/token.service.js';

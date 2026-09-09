@@ -1,3 +1,4 @@
+// @ts-check
 import ApiError from '../utils/ApiError.js';
 
 /** Validates req[source] against a zod schema and replaces it with parsed data. */

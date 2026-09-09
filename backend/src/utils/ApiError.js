@@ -1,3 +1,4 @@
+// @ts-check
 export default class ApiError extends Error {
   constructor(statusCode, message, details = null) {
     super(message);

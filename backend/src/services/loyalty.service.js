@@ -1,3 +1,4 @@
+// @ts-check
 import { User, Transaction } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { LOYALTY, LOYALTY_TIERS } from '../config/constants.js';

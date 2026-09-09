@@ -1,3 +1,4 @@
+// @ts-check
 /** Great-circle distance in kilometres. */
 export function haversineKm([lng1, lat1], [lng2, lat2]) {
   const R = 6371;

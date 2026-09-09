@@ -21,7 +21,8 @@
     "purge:demo": "node scripts/purge-demo-data.mjs",
     "make:admin": "node scripts/make-admin.mjs",
     "coverage": "node scripts/coverage-gate.mjs",
-    "test:coverage": "node tests/run-integration.mjs --coverage"
+    "test:coverage": "node tests/run-integration.mjs --coverage",
+    "typecheck": "tsc -p jsconfig.json"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -38,10 +39,12 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
     "mongodb-memory-server": "^10.0.0",
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=18.0.0"

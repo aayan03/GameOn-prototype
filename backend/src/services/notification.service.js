@@ -1,3 +1,4 @@
+// @ts-check
 import { Notification, User } from '../models/index.js';
 import * as push from './push.service.js';
 import logger from '../utils/logger.js';
@@ -33,6 +34,19 @@ const TEMPLATES = {
 
 /**
  * Creates one notification. Swallows its own errors on purpose — see above.
+ *
+ * @param {any}    userId  who it is for
+ * @param {string} type    a key of TEMPLATES, which supplies the default
+ *                         icon and title when this call does not
+ * @param {object} [options]
+ * @param {string} [options.title] overrides the template's title
+ * @param {string} [options.body]  the line the user actually reads
+ * @param {string} [options.link]  an in-app path, e.g. `/bookings/GRP123`
+ * @param {string} [options.icon]  overrides the template's icon
+ *
+ * Only `link` has a default, so without these annotations the options bag is
+ * inferred as `{ link?: string }` and the other three read as type errors at
+ * every call site — which is what the checker reported when this file opted in.
  */
 export async function notify(userId, type, { title, body, link = '', icon } = {}) {
   if (!userId || !type) return null;

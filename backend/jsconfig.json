@@ -1,0 +1,37 @@
+{
+  "//": [
+    "Type checking for a plain-JavaScript codebase, adopted file by file.",
+    "",
+    "`checkJs` is deliberately FALSE. With it on, every one of the 79 source",
+    "files is checked at once and the run opens with hundreds of errors — which",
+    "is how a type checker gets switched off again. Instead a file opts in with",
+    "`// @ts-check` on its first line, so the set of checked files only ever",
+    "grows and the check is green from the first commit.",
+    "",
+    "Start with anything that moves money. A rename or a wrong argument order in",
+    "wallet.service.js is a real financial bug that no test necessarily catches,",
+    "and the JSDoc in this project is good enough that the checker has plenty to",
+    "work with already.",
+    "",
+    "To add a file: put `// @ts-check` at the top, run `npm run typecheck`, fix",
+    "what it says. To check everything at once and see how far off it is:",
+    "`npx tsc -p jsconfig.json --checkJs`."
+  ],
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.js", "scripts/**/*.mjs"],
+  "exclude": ["node_modules", "tests"]
+}

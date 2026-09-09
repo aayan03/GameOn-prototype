@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Input safety helpers.
  *

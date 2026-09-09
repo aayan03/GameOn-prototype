@@ -403,7 +403,7 @@ export function policyFor(booking, venue) {
 export function refundFor(booking, venue) {
   const policy = policyFor(booking, venue);
 
-  const hoursUntil = (new Date(booking.startsAt) - Date.now()) / 3600000;
+  const hoursUntil = (new Date(booking.startsAt).getTime() - Date.now()) / 3600000;
 
   // Cash handed over at the gate never entered the platform. Refunding it as
   // wallet credit would mint money the platform never received: the venue
