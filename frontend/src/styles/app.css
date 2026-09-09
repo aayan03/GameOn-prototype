@@ -1398,6 +1398,14 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
   .logo { font-size: 1.14rem; gap: 8px; }
   .logo-mark { width: 34px; height: 34px; font-size: .78rem; }
   .nav-right { gap: 8px; }
+  /*
+    The top bar does not fit a 375px phone with both auth buttons on it.
+    Signed out it held the menu, the theme toggle, "Log in" and "Sign up" —
+    384px of content in a 375px viewport, so every page scrolled 9px sideways.
+    Sign up is the call to action worth keeping; Log in is one tap away in the
+    menu sheet, which already lists both.
+  */
+  .nav-login { display: none; }
   .btn-sm { padding: 8px 13px; font-size: .82rem; }
   .card-pad { padding: 20px; }
   .auth-card { padding: 26px; }

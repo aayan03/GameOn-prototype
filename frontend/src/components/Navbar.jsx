@@ -133,7 +133,10 @@ export default function Navbar() {
             </div>
           ) : (
             <>
-              <Link to="/login" className="btn btn-onlight btn-sm">Log in</Link>
+              {/* Hidden below 420px — see app.css. The whole bar is 384px wide
+                  on a 375px phone otherwise, and the page scrolls sideways.
+                  The mobile sheet carries Log in, so nothing is lost. */}
+              <Link to="/login" className="btn btn-onlight btn-sm nav-login">Log in</Link>
               <Link to="/register" className="btn btn-primary btn-sm">Sign up</Link>
             </>
           )}

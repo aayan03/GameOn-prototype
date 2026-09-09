@@ -28,6 +28,10 @@ export default function Venues() {
 
   const [venues, setVenues] = useState([]);
   const [meta, setMeta] = useState({ total: 0, page: 1, pages: 1 });
+  // Bumped by the retry button, so a failed load can be repeated without
+  // making the user change a filter to trigger the effect.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey((n) => n + 1);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -83,7 +87,7 @@ export default function Venues() {
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [filters]);
+  }, [filters, reloadKey]);
 
   const applyNearMe = async () => {
     const c = coords || (await request());
@@ -118,7 +122,13 @@ export default function Venues() {
       <div style={{ marginBottom: 22 }}>
         <h1 style={{ fontSize: '2rem' }}>Find a venue</h1>
         <p className="text-soft">
-          {loading ? 'Searching…' : `${meta.total} venue${meta.total === 1 ? '' : 's'} available`}
+          {/* Never report a confident "0 venues available" for a request that
+              FAILED. On a free tier that sleeps, the first load after an idle
+              spell is exactly when this happens, and telling somebody the
+              catalogue is empty is how they conclude the product is dead. */}
+          {loading ? 'Searching…'
+            : error ? 'Could not load venues'
+            : `${meta.total} venue${meta.total === 1 ? '' : 's'} available`}
           {filters.lat && ' near you'}
         </p>
       </div>
@@ -184,7 +194,10 @@ export default function Venues() {
           <div className="filters-body">
             <div className="filter-group">
               <span className="label">Sort by</span>
-              <select className="select" value={filters.sort} onChange={(e) => setFilter({ sort: e.target.value })}>
+              <select
+                className="select" aria-label="Sort venues by"
+                value={filters.sort} onChange={(e) => setFilter({ sort: e.target.value })}
+              >
                 <option value="">Recommended</option>
                 {filters.lat && <option value="distance">Nearest first</option>}
                 <option value="rating">Highest rated</option>
@@ -196,7 +209,10 @@ export default function Venues() {
 
             <div className="filter-group">
               <span className="label">City</span>
-              <select className="select" value={filters.city} onChange={(e) => setFilter({ city: e.target.value })}>
+              <select
+                className="select" aria-label="Filter by city"
+                value={filters.city} onChange={(e) => setFilter({ city: e.target.value })}
+              >
                 <option value="">All cities</option>
                 {cities.map((c) => <option key={c.city} value={c.city}>{c.city} ({c.venues})</option>)}
               </select>
@@ -207,6 +223,7 @@ export default function Venues() {
                 <span className="label">Within {filters.radiusKm || 25} km</span>
                 <input
                   type="range" min="1" max="50" step="1"
+                  aria-label="Search radius in kilometres"
                   value={filters.radiusKm || 25}
                   onChange={(e) => setFilter({ radiusKm: e.target.value })}
                   className="range"
@@ -237,6 +254,7 @@ export default function Venues() {
               <span className="label">Max price per hour: {filters.maxPrice ? rupees(filters.maxPrice) : 'Any'}</span>
               <input
                 type="range" min="200" max="3000" step="100"
+                aria-label="Maximum price per hour"
                 value={filters.maxPrice || 3000}
                 onChange={(e) => setFilter({ maxPrice: e.target.value === '3000' ? '' : e.target.value })}
                 className="range"
@@ -276,7 +294,10 @@ export default function Venues() {
 
           <div className="filters-foot">
             <button className="btn btn-primary btn-block" onClick={() => setShowFilters(false)}>
-              Show {meta.total} results
+              {/* This button applies filters and closes the drawer; it does not
+                  retry. Saying "Try again" here would be a second control that
+                  looks like the one in the error, and does something else. */}
+              {error ? 'Show results' : `Show ${meta.total} results`}
             </button>
           </div>
         </aside>
@@ -285,7 +306,13 @@ export default function Venues() {
 
         {/* ── Results ────────────────────────────────────────── */}
         <div className="results">
-          {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
+          {error && (
+            <div className="alert alert-error" style={{ marginBottom: 16, display: 'block' }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>We could not load venues</strong>
+              <p style={{ fontSize: '.92rem', marginBottom: 12 }}>{error}</p>
+              <button className="btn btn-sm btn-primary" onClick={reload}>Try again</button>
+            </div>
+          )}
 
           <div className="venue-grid">
             {loading

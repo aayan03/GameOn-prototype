@@ -56,6 +56,27 @@ export const tokenStore = {
   },
 };
 
+/**
+ * What to say when the response carries no message of its own.
+ *
+ * The API always sends `error.message`, so this only fires when something
+ * BETWEEN the browser and the API answered instead: a sleeping dyno, a proxy,
+ * a load balancer, a gateway timeout. Those are the moments a user is most
+ * likely to give up, and "Request failed (500)" — which is what they used to
+ * get — reads as though the app is broken rather than starting up.
+ */
+function fallbackMessage(status) {
+  if (status === 429) return 'You are doing that a bit too quickly. Wait a moment and try again.';
+  if (status === 502 || status === 503 || status === 504) {
+    return 'The server is waking up or briefly unavailable. Give it a few seconds and try again.';
+  }
+  if (status >= 500) return 'Something went wrong on our end. Please try again in a moment.';
+  if (status === 404) return 'We could not find that.';
+  if (status === 403) return 'You do not have access to that.';
+  if (status === 401) return 'Please log in to continue.';
+  return `That request could not be completed (${status}).`;
+}
+
 export class ApiError extends Error {
   constructor(message, status, details) {
     super(message);
@@ -188,7 +209,11 @@ async function request(path, { method = 'GET', body, params, auth = true, retry 
   window.dispatchEvent(new CustomEvent('gameon:request-ok'));
 
   if (!res.ok || json.success === false) {
-    throw new ApiError(json?.error?.message || `Request failed (${res.status})`, res.status, json?.error?.details);
+    throw new ApiError(
+      json?.error?.message || fallbackMessage(res.status),
+      res.status,
+      json?.error?.details,
+    );
   }
 
   return json;

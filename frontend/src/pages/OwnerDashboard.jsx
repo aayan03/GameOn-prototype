@@ -124,7 +124,10 @@ export default function OwnerDashboard() {
             </div>
             <div className="row gap-10 wrap">
               {data.venues.length > 1 && (
-                <select className="select" value={venueId} onChange={(e) => setVenueId(e.target.value)} style={{ maxWidth: 240 }}>
+                <select
+                  className="select" aria-label="Choose a venue"
+                  value={venueId} onChange={(e) => setVenueId(e.target.value)} style={{ maxWidth: 240 }}
+                >
                   <option value="">All venues</option>
                   {data.venues.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
                 </select>

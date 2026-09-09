@@ -94,7 +94,10 @@ export default function OwnerCalendar() {
         </div>
         <div className="row gap-10 wrap">
           {venues.length > 1 && (
-            <select className="select" value={venueId} onChange={(e) => setVenueId(e.target.value)} style={{ maxWidth: 230 }}>
+            <select
+              className="select" aria-label="Choose a venue"
+              value={venueId} onChange={(e) => setVenueId(e.target.value)} style={{ maxWidth: 230 }}
+            >
               {venues.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
             </select>
           )}
