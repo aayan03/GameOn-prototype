@@ -140,10 +140,41 @@ test('signing up on a taken address is indistinguishable from a fresh one', asyn
   assert.equal(login.status, 401);
 });
 
-test('a second signup attempt replaces the first link', async () => {
+/** Pretends the pending signup's email went out `minutes` ago. */
+async function agePendingEmail(email, minutes) {
+  await mongoose.model('PendingRegistration').updateOne(
+    { email },
+    { $set: { lastSentAt: new Date(Date.now() - minutes * 60 * 1000) } },
+  );
+}
+
+test('a second signup attempt inside the cooldown reuses the same link', async () => {
+  // register sends mail to an address the CALLER chose, so it is throttled per
+  // address like its two siblings. Inside that minute the details are still
+  // updated — somebody fixing a typo should not have to wait — but the token
+  // is NOT rotated, so the link already sitting in their inbox keeps working
+  // and no second email goes out.
   const email = uniqueEmail();
   const first = await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
   const firstToken = tokenFromUrl(first.body.data.devVerifyUrl);
+
+  const second = await post('/api/auth/register', { name: 'Ada', email, password: 'Different456' });
+  assert.equal(second.status, 200, 'the answer is unchanged');
+  assert.equal(second.body.data.message, first.body.data.message);
+  assert.equal(second.body.data.devVerifyUrl, undefined, 'no second email inside the cooldown');
+
+  // The original link still works, and carries the corrected password.
+  assert.equal((await post('/api/auth/verify-email', { token: firstToken })).status, 201);
+  assert.equal((await post('/api/auth/login', { email, password: 'Different456' })).status, 200);
+  assert.equal((await post('/api/auth/login', { email, password: 'Password123' })).status, 401);
+});
+
+test('a signup attempt after the cooldown replaces the first link', async () => {
+  const email = uniqueEmail();
+  const first = await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
+  const firstToken = tokenFromUrl(first.body.data.devVerifyUrl);
+
+  await agePendingEmail(email, 5);
 
   const second = await post('/api/auth/register', { name: 'Ada', email, password: 'Different456' });
   const secondToken = tokenFromUrl(second.body.data.devVerifyUrl);
@@ -156,6 +187,36 @@ test('a second signup attempt replaces the first link', async () => {
   // The account carries the password from the attempt that was confirmed.
   assert.equal((await post('/api/auth/login', { email, password: 'Different456' })).status, 200);
   assert.equal((await post('/api/auth/login', { email, password: 'Password123' })).status, 401);
+});
+
+test('register cannot be used to flood an inbox that already has an account', async () => {
+  // The "you already have an account" notice goes to the ADDRESS, not the
+  // caller — which is right, and is exactly why it needs a per-address
+  // cooldown. registerLimiter counts per IP and cannot see a distributed run.
+  const email = uniqueEmail();
+  const start = await post('/api/auth/register', { name: 'Ada', email, password: 'Password123' });
+  await post('/api/auth/verify-email', { token: tokenFromUrl(start.body.data.devVerifyUrl) });
+
+  const User = mongoose.model('User');
+  const noticeAt = async () => (await User.findOne({ email }).select('+signupNoticeAt').lean()).signupNoticeAt;
+
+  const first = await post('/api/auth/register', { name: 'Mallory', email, password: 'Whatever123' });
+  assert.equal(first.status, 200);
+  const stamped = await noticeAt();
+  assert.ok(stamped, 'the first notice is recorded');
+
+  // Five more attempts in the same second must send nothing further.
+  for (let i = 0; i < 5; i++) {
+    const again = await post('/api/auth/register', { name: 'Mallory', email, password: 'Whatever123' });
+    assert.equal(again.status, 200, 'and the answer never changes');
+    assert.equal(again.body.data.message, first.body.data.message);
+  }
+  assert.deepEqual(await noticeAt(), stamped, 'no further notice was sent');
+
+  // Once the cooldown passes, a genuine warning gets through again.
+  await User.updateOne({ email }, { $set: { signupNoticeAt: new Date(Date.now() - 5 * 60 * 1000) } });
+  await post('/api/auth/register', { name: 'Mallory', email, password: 'Whatever123' });
+  assert.notDeepEqual(await noticeAt(), stamped, 'a later attempt is notified');
 });
 
 test('resend is throttled per address and never leaks existence', async () => {

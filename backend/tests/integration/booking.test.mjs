@@ -890,3 +890,40 @@ test('the snapshot is what the booking screen quotes back', async () => {
   assert.equal(mine.refundPreview.percent, 100);
 });
 
+/* ── An owner cannot book their own venue (GO-06) ────────────── */
+
+test('an owner cannot book their own venue', async () => {
+  const { owner, venue, date, slot } = await scenario();
+  await fundWallet(owner.id, 50000);
+
+  const res = await post('/api/bookings', bookBody(venue, slot, date), { token: owner.token });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error.message, /your own venue/i);
+});
+
+test('self-booking is closed off for cash at the gate too', async () => {
+  // This was the profitable shape: book your own court with cash, settle it
+  // yourself, and collect loyalty points on a total you set by pricing the
+  // court. Points redeem to wallet balance that is spendable elsewhere.
+  const { owner, venue, date, slot } = await scenario({
+    venue: { acceptsPayAtVenue: true },
+  });
+
+  const res = await post('/api/bookings',
+    bookBody(venue, slot, date, { paymentMethod: 'pay_at_venue' }),
+    { token: owner.token });
+
+  assert.equal(res.status, 400);
+  assert.match(res.body.error.message, /your own venue/i);
+});
+
+test('another owner may still book at this venue', async () => {
+  // The block is about the venue you own, not about being an owner.
+  const { venue, date, slot } = await scenario();
+  const other = await createUser({ role: 'owner' });
+  await fundWallet(other.id, 50000);
+
+  const res = await post('/api/bookings', bookBody(venue, slot, date), { token: other.token });
+  assert.equal(res.status, 201);
+});

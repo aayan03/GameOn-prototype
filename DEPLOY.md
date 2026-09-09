@@ -156,6 +156,23 @@ VITE_SHOW_DEMO_LOGINS=false
 
 No trailing slash on `VITE_API_URL` — the API client appends `/api` itself.
 
+**If your API is not on Render, edit the CSP too.** `frontend/vercel.json`
+pins `connect-src` to the hosts the app actually talks to, and the API is one
+of them. It ships with `https://*.onrender.com` because that is what the
+free-hosting guide sets up; on any other host the browser will block every API
+call with a CSP violation in the console and nothing else.
+
+Replace that entry with your exact API origin — not a wildcard:
+
+```
+connect-src 'self' https://gameon-api.example.com https://*.razorpay.com …
+```
+
+This used to read `connect-src 'self' https:`, which allowed the page to send
+data to any HTTPS host on the internet and gave up most of what a CSP is for.
+The nginx deployment in `frontend/security-headers.conf` has always pinned it
+properly; keep the two in step.
+
 `VITE_SHOW_DEMO_LOGINS` must stay `false` (or unset) on anything public. The
 demo credentials are published in this repository, and one of them is a venue
 owner with access to that venue's customer names, phone numbers and revenue.

@@ -163,7 +163,7 @@ export const register = asyncHandler(async (req, res) => {
   const token = crypto.randomBytes(32).toString('base64url');
   const url = `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
 
-  const existing = await User.findOne({ email: address }).select('name email').lean();
+  const existing = await User.findOne({ email: address }).select('name email +signupNoticeAt').lean();
 
   if (existing) {
     /**
@@ -172,17 +172,54 @@ export const register = asyncHandler(async (req, res) => {
      * Whoever owns this address either forgot they had an account or is being
      * probed by somebody else. Either way they are the one who should hear
      * about it, and the API says exactly what it says below.
+     *
+     * Once a minute at most, though. This endpoint sends mail to an address
+     * the CALLER chose, so without a per-address cooldown it is a way to
+     * bombard somebody else's inbox — and `registerLimiter` cannot see that,
+     * because it counts per IP and the requests can come from anywhere. Both
+     * sibling endpoints already throttle exactly this; register wrote a
+     * timestamp and never read one.
      */
-    email.deliver({
-      to: existing.email,
-      ...email.alreadyRegisteredEmail({
-        name: existing.name,
-        resetUrl: `${appUrl()}/forgot-password`,
-      }),
-    }).catch((err) => logger.warn('already-registered notice failed', { err }));
+    const noticeDue = !existing.signupNoticeAt
+      || Date.now() - new Date(existing.signupNoticeAt).getTime() >= VERIFY_COOLDOWN_MS;
+
+    if (noticeDue) {
+      await User.updateOne({ _id: existing._id }, { $set: { signupNoticeAt: new Date() } });
+      email.deliver({
+        to: existing.email,
+        ...email.alreadyRegisteredEmail({
+          name: existing.name,
+          resetUrl: `${appUrl()}/forgot-password`,
+        }),
+      }).catch((err) => logger.warn('already-registered notice failed', { err }));
+    }
 
     logger.info('signup attempted on an address that already has an account', {
-      userId: String(existing._id),
+      userId: String(existing._id), notified: noticeDue,
+    });
+    return ok(res, CHECK_YOUR_INBOX);
+  }
+
+  /**
+   * A pending signup that was emailed less than a minute ago.
+   *
+   * Same reasoning as above, for an address that has no account yet. The
+   * details are still refreshed — someone correcting a typo in their name or
+   * password should not have to wait — but the token is NOT rotated and no
+   * second email goes out, so the link already in their inbox keeps working
+   * and nobody else's inbox can be used as a drum.
+   */
+  const pending = await PendingRegistration.findOne({ email: address }).select('lastSentAt').lean();
+  if (pending?.lastSentAt && Date.now() - new Date(pending.lastSentAt).getTime() < VERIFY_COOLDOWN_MS) {
+    await PendingRegistration.updateOne({ _id: pending._id }, {
+      $set: {
+        name: cleanText(name, 60),
+        passwordHash,
+        phone: phone || '',
+        role: role || ROLES.PLAYER,
+        city: cleanText(city || '', 60),
+        favoriteSports: favoriteSports || [],
+      },
     });
     return ok(res, CHECK_YOUR_INBOX);
   }

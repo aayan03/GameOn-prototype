@@ -224,6 +224,26 @@ export const createBooking = asyncHandler(async (req, res) => {
   const { venue, court } = await loadVenueAndCourt(venueId, courtId);
 
   /**
+   * You cannot book your own venue.
+   *
+   * `review.controller.js` already refuses a review of your own venue for the
+   * obvious reason; the same reasoning was never carried across to booking,
+   * and booking is where the money is. An owner could reserve their own court
+   * with cash-at-the-gate, mark it settled themselves — they pass the owner
+   * check on /settle — and collect loyalty points on a total they set by
+   * pricing their own court. Points redeem to wallet balance, which is
+   * spendable on real slots at other venues that the platform then owes real
+   * payouts for.
+   *
+   * An owner blocking out their own pitch is what blackouts are for.
+   */
+  if (String(venue.owner) === String(req.user._id)) {
+    throw ApiError.badRequest(
+      'This is your own venue. Use a blackout to take the slot out of service instead.'
+    );
+  }
+
+  /**
    * Cash at the gate is opt-in, per venue.
    *
    * This method reserves a slot with no money moving at all, so accepting it

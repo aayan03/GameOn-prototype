@@ -104,6 +104,17 @@ const userSchema = new mongoose.Schema(
     // so one inbox cannot be flooded from a botnet.
     resetRequestedAt: { type: Date, default: null, select: false },
 
+    /**
+     * When this address was last told "you already have an account".
+     *
+     * /auth/register answers identically whether or not the address is taken,
+     * and tells the INBOX rather than the caller — which means anyone can
+     * make us send mail to an address they do not own. `resendVerification`
+     * and `forgotPassword` both throttle that per address; register wrote a
+     * timestamp and never read one, so it was the flood that got through.
+     */
+    signupNoticeAt: { type: Date, default: null, select: false },
+
     // Devices registered for push. Capped at five most-recent by the
     // notification service so an old phone cannot accumulate tokens forever.
     pushTokens: [{
@@ -139,6 +150,7 @@ userSchema.methods.toPublic = function toPublic() {
   delete o.resetTokenHash;  // never leaves the server, under any circumstance
   delete o.resetTokenExpires;
   delete o.resetRequestedAt;
+  delete o.signupNoticeAt;
   return o;
 };
 
