@@ -146,6 +146,13 @@ export async function api(method, path, { body, token, headers = {} } = {}) {
   return { status: res.status, body: parsed, headers: res.headers };
 }
 
+/**
+ * The live server's origin, for tests that need to bypass `api()` — sending a
+ * malformed body, an odd Content-Type, or a hand-built request the helper
+ * would sanitise on the way out.
+ */
+export const serverUrl = () => baseUrl;
+
 export const get = (p, opts) => api('GET', p, opts);
 export const post = (p, body, opts) => api('POST', p, { ...opts, body });
 export const patch = (p, body, opts) => api('PATCH', p, { ...opts, body });

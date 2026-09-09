@@ -287,10 +287,31 @@ export async function quoteBooking({ venue, court, dateKey, starts, promoCode, t
   for (const start of starts) {
     const slot = byStart.get(start);
     if (!slot) throw ApiError.badRequest(`${toLabel(start)} is not a valid slot at this venue`);
-    if (slot.status === 'booked' || slot.status === 'held') {
-      throw ApiError.conflict(`${slot.label} has just been taken. Please pick another time.`);
+
+    /**
+     * An allowlist, deliberately, not a list of refusals.
+     *
+     * This used to name the three statuses it rejected — booked, held, past —
+     * and let anything else through. `blocked` is not in that list, so a slot
+     * the owner had taken out of service for maintenance was greyed out in
+     * the grid and then booked anyway by anything that posted directly. The
+     * owner had no idea; the player turned up to a closed pitch.
+     *
+     * Written this way round, a status added later is refused until somebody
+     * decides it should be bookable, rather than bookable until somebody
+     * remembers to refuse it.
+     */
+    if (slot.status !== 'available') {
+      if (slot.status === 'booked' || slot.status === 'held') {
+        throw ApiError.conflict(`${slot.label} has just been taken. Please pick another time.`);
+      }
+      if (slot.status === 'past') throw ApiError.badRequest(`${slot.label} has already passed`);
+      if (slot.status === 'blocked') {
+        throw ApiError.badRequest(`${slot.label} is not available — the venue has taken it out of service.`);
+      }
+      throw ApiError.badRequest(`${slot.label} cannot be booked.`);
     }
-    if (slot.status === 'past') throw ApiError.badRequest(`${slot.label} has already passed`);
+
     chosen.push(slot);
   }
 
