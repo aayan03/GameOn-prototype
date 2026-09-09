@@ -72,6 +72,14 @@ export default function GameDetail() {
     finally { setBusy(null); }
   };
 
+  /**
+   * The only handler here without a `finally`, deliberately.
+   *
+   * On success this navigates away and the component unmounts, so clearing
+   * `busy` afterwards would be a setState on a component that no longer
+   * exists. The catch clears it instead, because a failed cancel leaves the
+   * user on this page with a button that has to become pressable again.
+   */
   const cancelGame = async () => {
     setBusy('cancel');
     try {
@@ -81,6 +89,16 @@ export default function GameDetail() {
     } catch (err) { toast.error(err.message); setBusy(null); }
   };
 
+  /**
+   * Collecting everyone's share — the one action on this page that moves money
+   * out of other people's wallets.
+   *
+   * Nothing is enforced here; a button cannot be a guarantee. The rules live in
+   * teamup.controller.js settleCosts: host only, cost sharing on, not before
+   * kickoff, once per game via an atomic claim, and each player charged the
+   * share THEY agreed to rather than whatever the host set since. This is only
+   * the trigger, and it is worth knowing that when reading it.
+   */
   const settle = async () => {
     setBusy('settle');
     try {

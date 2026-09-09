@@ -95,6 +95,19 @@ export default function CreateGameModal({ onClose, onCreated }) {
     e.preventDefault();
     setBusy(true); setError(''); setFieldErrors({});
 
+    /**
+     * Parsed in the BROWSER's timezone, not the venue's.
+     *
+     * A date-time string with no offset is local time by definition, and
+     * `.toISOString()` below then converts it to UTC using whatever zone the
+     * phone is set to. That is correct for everyone in the country this app
+     * serves, and quietly wrong for a host who sets a game while travelling —
+     * they would pick 6pm and create it at 6pm wherever they are standing.
+     *
+     * The API is careful about this (APP_TIMEZONE, and utils/time.js runs the
+     * slot grid on the venue clock); this one input is not. Worth fixing
+     * alongside anything else that assumes a single timezone.
+     */
     const playAt = new Date(`${form.date}T${form.time}:00`);
     if (Number.isNaN(playAt.getTime())) { setError('Enter a valid date and time'); setBusy(false); return; }
     if (playAt <= new Date()) { setError('Pick a kickoff time in the future'); setBusy(false); return; }
@@ -127,6 +140,16 @@ export default function CreateGameModal({ onClose, onCreated }) {
     }
   };
 
+  /**
+   * What each joiner pays. The `+ 1` is the host, who is playing too.
+   *
+   * Splitting by spotsNeeded alone would divide the pitch among the guests
+   * and let the host in free, which is not what "split the cost" means to
+   * anybody. Rounded UP so the total collected covers the slot rather than
+   * leaving the host a few rupees short — the server charges each player the
+   * share they agreed to at join time, so this figure is what they are
+   * agreeing to, and it must not be optimistic.
+   */
   const perPerson = form.costEnabled && form.totalAmount > 0
     ? Math.ceil(form.totalAmount / (Number(form.spotsNeeded) + 1))
     : 0;
