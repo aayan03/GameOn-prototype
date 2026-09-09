@@ -60,8 +60,12 @@ console.log('\n── reviews are earned, once ──');
 
 console.log('\n── pay-at-venue can be settled ──');
 {
-  const s = src('src/controllers/booking.controller.js');
-  ok('settleCash exists', /export const settleCash/.test(s));
+  // The guards live in the service now; the controller only routes to it.
+  // See services/bookingFlow.service.js — the behaviour is unchanged, so these
+  // assertions follow the code rather than being relaxed.
+  const s = src('src/services/bookingFlow.service.js');
+  ok('settleCash exists', /export async function settleCash/.test(s));
+  ok('the controller still exposes it', /export const settleCash/.test(src('src/controllers/booking.controller.js')));
   ok('is conditional on still being unpaid', /'payment\.status': \{ \$ne: 'paid' \}/.test(s));
   ok('writes the real per-row amount', /'payment\.amountPaid': '\$totalAmount'/.test(s));
   ok('rejects an online-paid booking', /already paid online/.test(s));
@@ -106,8 +110,22 @@ console.log('\n── money that never entered the platform is never refunded �
   const s = src('src/services/booking.service.js');
   ok('gate cash is not refunded to the wallet', /method === 'pay_at_venue'/.test(s) && /tier: 'at_venue'/.test(s));
 
-  const b = src('src/controllers/booking.controller.js');
-  ok('points are stamped on one row, not every row', !/updateMany\(\{ groupRef \}, \{ \$set: \{ pointsAwarded/.test(b));
+  const b = src('src/services/bookingFlow.service.js');
+  /**
+   * Awarding writes ONE row; revoking writes every row.
+   *
+   * A 3-slot booking that earned 90 points had 270 clawed back when the award
+   * was stamped group-wide, because cancellation sums the field across rows.
+   * So an award must be updateOne. Setting the field to 0 across the group is
+   * the revoke, and that one is correct — this used to be a blanket "no
+   * updateMany touches pointsAwarded", which only passed because the calls
+   * happened to be written with req.params.groupRef rather than the shorthand.
+   */
+  const pointsUpdateMany = [...b.matchAll(/updateMany\([^;]*?pointsAwarded:\s*([^\s,}]+)/gs)]
+    .map((m) => m[1]);
+  ok('points are awarded on one row, never across the group',
+    pointsUpdateMany.every((v) => v === '0'));
+  ok('and the award itself uses updateOne', /updateOne\(\{ _id: [^}]+\}, \{ \$set: \{ pointsAwarded: /.test(b));
   ok('settleCash totals only what this call settled', /'payment\.paidAt': now/.test(b));
   ok('a review is only promised once the game has ended', /const played = new Date\(rows\[0\]\.endsAt\) <= now/.test(b));
 
