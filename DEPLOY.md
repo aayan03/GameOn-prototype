@@ -554,6 +554,10 @@ were made is more useful than a claim that none were.
       (`MAX_UNSETTLED_SLOTS` in `controllers/booking.controller.js`). Raise it
       if you take group bookings that legitimately sit unpaid; lowering it
       tightens the ceiling on how much inventory one person can tie up.
+- [ ] Payouts only ever count money the platform actually received —
+      `payment.status: 'paid'`, excluding cash collected at the gate. If you
+      settle gate cash with owners, that is a separate arrangement and this
+      job deliberately does not model it.
 
 ---
 

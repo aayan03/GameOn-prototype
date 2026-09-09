@@ -251,11 +251,35 @@ export const runPayouts = asyncHandler(async (req, res) => {
   const periodStart = new Date(periodEnd.getTime() - 7 * 86400000);
   const commissionPercent = env.PLATFORM_COMMISSION_PERCENT;
 
+  /**
+   * A payout may only ever reflect money the PLATFORM is actually holding.
+   *
+   * Two rules, both learned the expensive way:
+   *
+   *  - `payment.status: 'paid'` is in the filter, and `earned` is
+   *    `amountPaid` with no fallback. The old version fell back to
+   *    `totalAmount` whenever nothing had been paid, so every unpaid
+   *    CONFIRMED booking — an abandoned checkout, a manual request the owner
+   *    confirmed before the player paid, a slot held for free — paid the
+   *    owner its full quoted price out of the platform's pocket.
+   *
+   *  - Cash at the gate is excluded outright. That money went straight into
+   *    the owner's hand and never entered the platform, so counting it means
+   *    paying them a second time for it. `amountPaid` is set on those rows by
+   *    /settle, which is a record that cash was collected — not a record that
+   *    we received it.
+   *
+   * A refunded booking is already excluded by the status filter: cancelling
+   * or rejecting moves it out of CONFIRMED/COMPLETED.
+   */
   const rows = await Booking.aggregate([
     {
       $match: {
         status: { $in: [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.COMPLETED] },
         endsAt: { $gt: periodStart, $lte: periodEnd },
+        'payment.status': 'paid',
+        'payment.method': { $ne: 'pay_at_venue' },
+        'payment.amountPaid': { $gt: 0 },
       },
     },
     { $lookup: { from: 'venues', localField: 'venue', foreignField: '_id', as: 'v' } },
@@ -264,9 +288,8 @@ export const runPayouts = asyncHandler(async (req, res) => {
         ownerId: { $arrayElemAt: ['$v.owner', 0] },
         // Each venue can carry its own rate; fall back to the platform default.
         rate: { $ifNull: [{ $arrayElemAt: ['$v.commissionPercent', 0] }, commissionPercent] },
-        earned: {
-          $cond: [{ $gt: ['$payment.amountPaid', 0] }, '$payment.amountPaid', '$totalAmount'],
-        },
+        // What we actually took, never the quoted total.
+        earned: '$payment.amountPaid',
       },
     },
     {
