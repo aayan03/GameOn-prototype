@@ -57,60 +57,110 @@ export async function overview(venueIds, days = 30) {
   const prevEnd = new Date(start.getTime() - 1);
   const prevStart = new Date(start.getTime() - days * 86400000);
 
-  const summarise = async (from, to) => {
-    const [row] = await Booking.aggregate([
-      { $match: { venue: { $in: ids }, startsAt: { $gte: from, $lte: to } } },
-      {
-        $group: {
-          _id: null,
-          revenue: { $sum: { $cond: [{ $in: ['$status', EARNING] }, REVENUE, 0] } },
-          slots: { $sum: 1 },
-          earningSlots: { $sum: { $cond: [{ $in: ['$status', EARNING] }, 1, 0] } },
-          cancelledSlots: {
-            $sum: { $cond: [{ $in: ['$status', [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.REJECTED]] }, 1, 0] },
-          },
-          groups: { $addToSet: '$groupRef' },
-          customers: { $addToSet: '$user' },
-        },
-      },
-    ]);
+  /**
+   * The sums for one window, and the two distinct counts, as separate
+   * branches.
+   *
+   * `bookings` and `uniqueCustomers` used to be `$addToSet` accumulators
+   * whose only use was `.length` — so the server collected every distinct
+   * groupRef and every distinct user id into arrays inside ONE document, to
+   * answer "how many". A `$group` stage is capped at 100 MB and the document
+   * it produces at 16 MB, and a busy venue over a 365-day window finds both.
+   * The failure mode is the dashboard erroring out rather than getting slow,
+   * which is the worse of the two.
+   *
+   * Grouping by the field and counting the groups asks the same question
+   * without ever materialising the answer.
+   */
+  const windowPipelines = (from, to) => {
+    const inWindow = { $match: { startsAt: { $gte: from, $lte: to } } };
     return {
-      revenue: row?.revenue || 0,
-      slots: row?.slots || 0,
-      earningSlots: row?.earningSlots || 0,
-      cancelledSlots: row?.cancelledSlots || 0,
-      bookings: row?.groups?.length || 0,
-      uniqueCustomers: row?.customers?.length || 0,
+      totals: [
+        inWindow,
+        {
+          $group: {
+            _id: null,
+            revenue: { $sum: { $cond: [{ $in: ['$status', EARNING] }, REVENUE, 0] } },
+            slots: { $sum: 1 },
+            earningSlots: { $sum: { $cond: [{ $in: ['$status', EARNING] }, 1, 0] } },
+            cancelledSlots: {
+              $sum: { $cond: [{ $in: ['$status', [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.REJECTED]] }, 1, 0] },
+            },
+          },
+        },
+      ],
+      groups: [inWindow, { $group: { _id: '$groupRef' } }, { $count: 'c' }],
+      customers: [inWindow, { $group: { _id: '$user' } }, { $count: 'c' }],
     };
   };
 
-  const [current, previous] = await Promise.all([
-    summarise(start, end),
-    summarise(prevStart, prevEnd),
-  ]);
+  const cur = windowPipelines(start, end);
+  const prev = windowPipelines(prevStart, prevEnd);
 
-  // Repeat customers: booked on more than one distinct day in the window.
-  const repeat = await Booking.aggregate([
+  /**
+   * Both windows and the repeat-customer count in ONE pass.
+   *
+   * These were three separate aggregations over the same collection with
+   * overlapping filters. The two comparison windows are contiguous and
+   * disjoint — `prevEnd` is one millisecond before `start` — so their union
+   * is a single range, and `$facet` lets each branch narrow the same stream
+   * rather than re-scanning the index per window.
+   */
+  const [agg] = await Booking.aggregate([
+    { $match: { venue: { $in: ids }, startsAt: { $gte: prevStart, $lte: end } } },
     {
-      $match: {
-        venue: { $in: ids },
-        startsAt: { $gte: start, $lte: end },
-        status: { $in: EARNING },
+      $facet: {
+        curTotals: cur.totals,
+        curGroups: cur.groups,
+        curCustomers: cur.customers,
+        prevTotals: prev.totals,
+        prevGroups: prev.groups,
+        prevCustomers: prev.customers,
+        // Repeat customers: booked on more than one distinct day in the window.
+        repeat: [
+          { $match: { startsAt: { $gte: start, $lte: end }, status: { $in: EARNING } } },
+          { $group: { _id: { user: '$user', date: '$date' } } },
+          { $group: { _id: '$_id.user', days: { $sum: 1 } } },
+          { $match: { days: { $gt: 1 } } },
+          { $count: 'c' },
+        ],
       },
     },
-    { $group: { _id: { user: '$user', date: '$date' } } },
-    { $group: { _id: '$_id.user', days: { $sum: 1 } } },
-    { $match: { days: { $gt: 1 } } },
-    { $count: 'c' },
+  ]).allowDiskUse(true);
+
+  const readWindow = (totals, groups, customers) => {
+    const t = totals?.[0];
+    return {
+      revenue: t?.revenue || 0,
+      slots: t?.slots || 0,
+      earningSlots: t?.earningSlots || 0,
+      cancelledSlots: t?.cancelledSlots || 0,
+      bookings: groups?.[0]?.c || 0,
+      uniqueCustomers: customers?.[0]?.c || 0,
+    };
+  };
+
+  const current = readWindow(agg?.curTotals, agg?.curGroups, agg?.curCustomers);
+  const previous = readWindow(agg?.prevTotals, agg?.prevGroups, agg?.prevCustomers);
+  const repeat = agg?.repeat || [];
+
+  /**
+   * These two cannot join the pass above and are not made to.
+   *
+   * `pendingRequests` counts bookings that have not happened yet, so their
+   * `startsAt` is beyond the report window entirely; `occupancy` reads the
+   * venues' operating hours rather than the bookings. Running them alongside
+   * rather than after costs nothing and takes the dashboard's critical path
+   * from six sequential round trips to two.
+   */
+  const [pendingRequests, occupancyPercent] = await Promise.all([
+    Booking.countDocuments({
+      venue: { $in: ids },
+      status: BOOKING_STATUS.PENDING,
+      endsAt: { $gte: new Date() },
+    }),
+    occupancy(venueIds, days),
   ]);
-
-  const pendingRequests = await Booking.countDocuments({
-    venue: { $in: ids },
-    status: BOOKING_STATUS.PENDING,
-    endsAt: { $gte: new Date() },
-  });
-
-  const occupancyPercent = await occupancy(venueIds, days);
 
   const pct = (now, before) => {
     if (!before) return now > 0 ? 100 : 0;

@@ -106,6 +106,60 @@ export async function notifyMany(userIds, type, payload_ = {}) {
   }
 }
 
+/**
+ * Several DIFFERENT notifications, one write.
+ *
+ * `notifyMany` above is one payload fanned out to many people — "your game is
+ * full". This is the other shape, and the one the lifecycle job actually
+ * needs: a payload per recipient, because every reminder names its own venue
+ * and links to its own booking.
+ *
+ * Without this the job had no batching option that fitted, so it awaited
+ * `notify` once per row inside a loop — a round trip each, serially, for up
+ * to 500 rows a pass.
+ *
+ * `items` is `[{ user, type, title?, body?, link?, icon? }]`. Rows missing a
+ * user or a type are dropped rather than throwing: this is housekeeping, and
+ * one malformed entry must not cost the whole batch.
+ *
+ * Unordered, so one bad document does not abort the rest. Errors are
+ * swallowed and logged for the same reason `notify` swallows its own — a
+ * notification failing must never take down the booking that triggered it.
+ */
+export async function notifyEach(items) {
+  const docs = [];
+  const deliveries = [];
+
+  for (const item of items || []) {
+    if (!item?.user || !item?.type) continue;
+    const t = TEMPLATES[item.type] || {};
+    const payload = {
+      title: (item.title || t.title || 'GameOn').slice(0, 120),
+      body: String(item.body || '').slice(0, 400),
+      link: String(item.link || '').slice(0, 200),
+      icon: item.icon || t.icon || '🔔',
+    };
+    docs.push({ user: item.user, type: item.type, ...payload });
+    deliveries.push([item.user, payload]);
+  }
+
+  if (!docs.length) return [];
+
+  // Not awaited, exactly as in `notify`: the device delivery must not hold up
+  // the caller. `pushedAt` is deliberately not stamped here — `notifyMany`
+  // does not either, and nothing reads the field.
+  for (const [user, payload] of deliveries) {
+    push.sendToUser(user, payload).catch((err) => logger.warn('push fan-out failed', { err }));
+  }
+
+  try {
+    return await Notification.insertMany(docs, { ordered: false });
+  } catch (err) {
+    logger.error('batch notification create failed', { err, count: docs.length });
+    return [];
+  }
+}
+
 export function unreadCount(userId) {
   return Notification.countDocuments({ user: userId, readAt: null });
 }

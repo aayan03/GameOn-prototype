@@ -27,6 +27,22 @@ import logger from '../utils/logger.js';
 const REVIEW_PROMPT_WINDOW_MS = 48 * 3600 * 1000;
 
 /**
+ * Venue ids to names, in one query.
+ *
+ * Every step here writes a notification naming the venue, and three of them
+ * used to do that with a `Venue.findById` inside their per-group loop — the
+ * same few venues fetched once per booking group, up to 500 times a pass. The
+ * batch is bounded and the ids repeat heavily, so this is a small map built
+ * once and read from memory.
+ */
+async function namesFor(venueIds) {
+  const ids = [...new Set(venueIds.map(String))].filter(Boolean);
+  if (!ids.length) return new Map();
+  const venues = await Venue.find({ _id: { $in: ids } }).select('name').lean();
+  return new Map(venues.map((v) => [String(v._id), v.name]));
+}
+
+/**
  * Bookings whose end time has passed become COMPLETED.
  *
  * Claim first, read second. Finding rows and then updating them meant two API
@@ -75,10 +91,14 @@ async function completeFinishedBookings(now, runId) {
     perUser.set(String(b.user), (perUser.get(String(b.user)) || 0) + 1);
   }
 
-  await Promise.all(
-    [...perUser].map(([userId, count]) =>
-      User.updateOne({ _id: userId }, { $inc: { gamesPlayed: count } })
-    )
+  // One round trip, not one per player. A 500-row batch spread across a few
+  // hundred accounts fired that many concurrent single-document updates at
+  // the connection pool, which is a burst the pool then has to queue anyway.
+  await User.bulkWrite(
+    [...perUser].map(([userId, count]) => ({
+      updateOne: { filter: { _id: userId }, update: { $inc: { gamesPlayed: count } } },
+    })),
+    { ordered: false }
   );
 
   // Ask for a review — but only for games that finished recently. On the first
@@ -97,8 +117,7 @@ async function completeFinishedBookings(now, runId) {
   if (fresh.length) {
     // Two batched queries instead of two per booking.
     const venueIds = [...new Set(fresh.map((b) => String(b.venue)))];
-    const venues = await Venue.find({ _id: { $in: venueIds } }).select('name').lean();
-    const venueName = new Map(venues.map((v) => [String(v._id), v.name]));
+    const venueName = await namesFor(venueIds);
 
     const existing = await Review.find({
       user: { $in: [...new Set(fresh.map((b) => String(b.user)))] },
@@ -106,15 +125,22 @@ async function completeFinishedBookings(now, runId) {
     }).select('user venue').lean();
     const reviewed = new Set(existing.map((r) => `${r.user}-${r.venue}`));
 
+    // Built up and written once. Each prompt names its own venue and links to
+    // its own booking, so `notifyMany` — one payload to many people — is the
+    // wrong shape; `notifyEach` is the one that fits.
+    const prompts = [];
     for (const b of fresh) {
       if (reviewed.has(`${b.user}-${b.venue}`)) continue;
       const name = venueName.get(String(b.venue));
       if (!name) continue;
-      await notify.notify(b.user, 'review_request', {
+      prompts.push({
+        user: b.user,
+        type: 'review_request',
         body: `How was your game at ${name}? A quick rating helps other players.`,
         link: `/bookings/${b.groupRef}`,
       });
     }
+    await notify.notifyEach(prompts);
   }
 
   } catch (err) {
@@ -260,7 +286,13 @@ async function expireUnsettledGateCash(now) {
   if (!stale.length) return { gateCashReleased: 0 };
 
   const groups = [...new Set(stale.map((b) => b.groupRef))];
+  // Every venue named in this batch, once. The lookup used to sit inside the
+  // loop below, so the same handful of venues was fetched again for every
+  // group — the reminder step already did it this way and these two did not.
+  const venueName = await namesFor(stale.map((b) => b.venue));
+
   let released = 0;
+  const notices = [];
 
   for (const groupRef of groups) {
     // Conditional on still being unpaid, so an owner tapping Settle in the
@@ -277,14 +309,20 @@ async function expireUnsettledGateCash(now) {
     released += result.modifiedCount;
 
     const first = stale.find((b) => b.groupRef === groupRef);
-    const venue = await Venue.findById(first.venue).select('name').lean();
-    await notify.notify(first.user, 'booking_cancelled', {
+    notices.push({
+      user: first.user,
+      type: 'booking_cancelled',
       title: 'Your slot was released',
-      body: `${venue?.name || 'The venue'} had not recorded your payment, so the slot has gone `
+      body: `${venueName.get(String(first.venue)) || 'The venue'} had not recorded your payment, so the slot has gone `
         + 'back to them. Nothing was charged. Book again if it is still free, or pay online next time.',
       link: '/bookings',
-    }).catch(() => {});
+    });
   }
+
+  // One write for the batch, after the flips — a notification failing must
+  // not stop a slot being released, which is what the per-row `.catch(() => {})`
+  // was guarding against before.
+  await notify.notifyEach(notices).catch(() => {});
 
   return { gateCashReleased: released };
 }
@@ -319,8 +357,12 @@ async function expireStaleRequests(now) {
     groups.get(b.groupRef).push(b);
   }
 
+  // Once for the batch — see namesFor.
+  const venueName = await namesFor(stale.map((b) => b.venue));
+
   let expired = 0;
   let refunded = 0;
+  const notices = [];
 
   for (const [groupRef, rows] of groups) {
     const flip = await Booking.updateMany(
@@ -349,7 +391,7 @@ async function expireStaleRequests(now) {
     const group = all.length ? all : rows;
 
     const paid = group.reduce((sum, b) => sum + (b.payment?.amountPaid || 0), 0);
-    const venue = await Venue.findById(rows[0].venue).select('name').lean();
+    const venue = { name: venueName.get(String(rows[0].venue)) };
 
     let issued = { refunded: 0, method: 'none' };
     if (paid > 0) {
@@ -378,7 +420,9 @@ async function expireStaleRequests(now) {
       await Booking.updateMany({ groupRef }, { $set: { pointsAwarded: 0 } });
     }
 
-    await notify.notify(rows[0].user, 'booking_rejected', {
+    notices.push({
+      user: rows[0].user,
+      type: 'booking_rejected',
       title: 'Request expired',
       body: issued.refunded > 0
         ? `${venue?.name || 'The venue'} did not confirm in time. Your slot was released and ₹${issued.refunded} is `
@@ -387,6 +431,10 @@ async function expireStaleRequests(now) {
       link: '/bookings',
     });
   }
+
+  // After the loop, in one write. Every refund above is already claimed and
+  // settled by this point, so a notification failing cannot unwind money.
+  await notify.notifyEach(notices).catch(() => {});
 
   return { expired, refunded };
 }
@@ -420,17 +468,16 @@ async function sendReminders(now, runId) {
   const byGroup = new Map();
   for (const b of upcoming) if (!byGroup.has(b.groupRef)) byGroup.set(b.groupRef, b);
 
-  const venues = await Venue.find({
-    _id: { $in: [...new Set(upcoming.map((b) => String(b.venue)))] },
-  }).select('name').lean();
-  const venueName = new Map(venues.map((v) => [String(v._id), v.name]));
+  const venueName = await namesFor(upcoming.map((b) => b.venue));
 
-  for (const b of byGroup.values()) {
-    await notify.notify(b.user, 'booking_reminder', {
+  await notify.notifyEach(
+    [...byGroup.values()].map((b) => ({
+      user: b.user,
+      type: 'booking_reminder',
       body: `Your game at ${venueName.get(String(b.venue)) || 'the venue'} is tomorrow. Tap for your ticket.`,
       link: `/bookings/${b.groupRef}`,
-    });
-  }
+    }))
+  );
 
   await Booking.updateMany({ lifecycleRun: `r:${runId}` }, { $set: { lifecycleRun: '' } });
 
