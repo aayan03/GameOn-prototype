@@ -149,3 +149,49 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t gameon-api ./backend
       - run: docker build -t gameon-web ./frontend
+
+  audit:
+    name: Dependency audit (production deps)
+    runs-on: ubuntu-latest
+    # A high-severity advisory in nodemailer — recipient-domain validation
+    # bypass, which on a service that emails password-reset links is an
+    # account-takeover path — sat in this repository unnoticed because nothing
+    # ever ran `npm audit`. Lint and tests cannot see that class of problem at
+    # all: the code is correct, the dependency underneath it is not.
+    #
+    # Production dependencies only. A vulnerability in a test runner or a
+    # bundler is worth knowing about but does not ship, and failing every pull
+    # request over one is how a team learns to ignore this job.
+    #
+    # The gate is `high`, and the moderates are reported without failing. That
+    # split is deliberate rather than lax: both moderates open right now have
+    # been assessed and neither is reachable. `qs` is pinned by Express 4 with
+    # no fix inside it, and app.js takes qs out of the query path entirely by
+    # setting `query parser: simple`. `react-router`'s open redirect needs a
+    # navigation target that comes from a URL, and the only one in the app —
+    # /login?next= — is filtered through utils/redirect.js. Blocking on those
+    # would leave this job permanently red, which is worth less than a job that
+    # goes red only when something new and serious lands.
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        working-directory: ${{ matrix.app }}
+        run: npm ci || npm install
+
+      - name: Fail on high or critical
+        working-directory: ${{ matrix.app }}
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Report everything else
+        if: always()
+        working-directory: ${{ matrix.app }}
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=moderate
