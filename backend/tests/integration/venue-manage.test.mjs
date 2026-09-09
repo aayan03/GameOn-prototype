@@ -250,3 +250,73 @@ test('a venue with nothing booked reports zero, not undefined', async () => {
   const row = res.body.data.venues.find((v) => String(v._id) === String(venue._id));
   assert.equal(row.upcomingBookings, 0);
 });
+
+/* ── The owner calendar ───────────────────────────────────────── */
+
+/**
+ * The calendar used to ask the database twice about the same venue and date —
+ * once for the bookings to draw, once for the occupied slots — with filters
+ * that did not select the same rows. It now takes one query and derives both
+ * views, so what the grid shows and what it treats as taken cannot drift
+ * apart. These cover the three states that separates.
+ */
+async function calendarFor(owner, venueId, date) {
+  const res = await get(`/api/owner/calendar?venueId=${venueId}&date=${date}`, { token: owner.token });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return res.body.data.courts[0].slots;
+}
+
+const dayThreeAhead = () => new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+
+test('the calendar shows a booked slot as taken, with who booked it', async () => {
+  const { owner, venue } = await ownerWithVenue();
+  await publish(venue._id);
+  const player = await bookFuture(venue._id, venue.courts[0]._id);
+
+  const slots = await calendarFor(owner, venue._id, dayThreeAhead());
+  const taken = slots.find((s) => s.start === 600);
+
+  assert.ok(taken, 'the 10:00 slot should be on the grid');
+  assert.equal(taken.status, 'booked', 'a confirmed booking occupies the slot');
+  assert.ok(taken.booking, 'the owner needs to see whose booking it is');
+  // The populated player still comes through the single query.
+  assert.equal(taken.booking.player, player.user.name, 'the grid names the player who booked');
+  assert.equal(taken.booking.status, 'confirmed');
+  assert.equal(taken.booking.paid, false, 'nothing was paid on this fixture');
+  assert.ok(taken.booking.groupRef || taken.booking.bookingRef, 'and a reference to open it by');
+});
+
+test('a cancelled booking leaves the grid and frees the slot', async () => {
+  const { owner, venue } = await ownerWithVenue();
+  await publish(venue._id);
+  await bookFuture(venue._id, venue.courts[0]._id);
+  const date = dayThreeAhead();
+
+  const { Booking } = await import('../../src/models/index.js');
+  await Booking.updateMany({ venue: venue._id }, { $set: { status: 'cancelled', slotLocked: false } });
+
+  const slots = await calendarFor(owner, venue._id, date);
+  const freed = slots.find((s) => s.start === 600);
+
+  // Both halves of the derivation have to agree: the row is hidden from the
+  // grid AND the slot is bookable again. Reading those from one query is the
+  // point of the change.
+  assert.equal(freed.status, 'available', 'the slot goes back to the venue');
+  assert.equal(freed.booking, null, 'and a cancelled booking is not drawn on it');
+});
+
+test('a blackout shows on the calendar without any booking behind it', async () => {
+  const { owner, venue } = await ownerWithVenue();
+  await publish(venue._id);
+  const date = dayThreeAhead();
+
+  const black = await post('/api/owner/blackouts', {
+    venueId: venue._id, date, reason: 'Resurfacing',
+    startMinutes: 600, endMinutes: 660,
+  }, { token: owner.token });
+  assert.equal(black.status, 201, JSON.stringify(black.body));
+
+  const slots = await calendarFor(owner, venue._id, date);
+  assert.equal(slots.find((s) => s.start === 600).status, 'blocked');
+  assert.equal(slots.find((s) => s.start === 660).status, 'available', 'only the blacked-out hour');
+});

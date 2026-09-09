@@ -5,7 +5,7 @@ import { SPORT_KEYS, SKILL_LEVELS } from '../config/constants.js';
 const teamSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 60 },
-    slug: { type: String, unique: true, index: true },
+    slug: { type: String, unique: true },
     logo: { type: String, default: '' },
     sport: { type: String, enum: SPORT_KEYS, required: true, index: true },
     captain: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },

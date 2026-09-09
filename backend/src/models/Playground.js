@@ -31,7 +31,7 @@ const pointSchema = new mongoose.Schema({
 const playgroundSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 120 },
-    slug: { type: String, unique: true, index: true },
+    slug: { type: String, unique: true },
     description: { type: String, default: '', maxlength: 1500 },
 
     sports: {

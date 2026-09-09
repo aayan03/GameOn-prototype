@@ -38,7 +38,7 @@ const pointSchema = new mongoose.Schema(
 const eventSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true, maxlength: 120 },
-    slug: { type: String, unique: true, index: true },
+    slug: { type: String, unique: true },
     description: { type: String, default: '', maxlength: 4000 },
 
     type: { type: String, enum: EVENT_TYPE_KEYS, required: true, index: true },

@@ -34,7 +34,9 @@ const venueSchema = new mongoose.Schema(
     // see the note above the index declarations at the bottom for why this
     // collection deliberately carries no text index at all.
     name: { type: String, required: true, trim: true },
-    slug: { type: String, unique: true, index: true },
+    // `unique: true` already builds this index; `index: true` alongside it
+    // declares the same one twice, which Mongoose warns about on boot.
+    slug: { type: String, unique: true },
     description: { type: String, default: '', maxlength: 2000 },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
 

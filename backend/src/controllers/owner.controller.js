@@ -8,7 +8,7 @@ import { cleanText } from '../utils/sanitize.js';
 import { isValidDateKey, todayKey, toLabel } from '../utils/time.js';
 import { BOOKING_STATUS } from '../config/constants.js';
 import * as analytics from '../services/analytics.service.js';
-import { buildAvailability, takenSlotsFor } from '../services/booking.service.js';
+import { buildAvailability } from '../services/booking.service.js';
 import env from '../config/env.js';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -198,19 +198,39 @@ export const calendar = asyncHandler(async (req, res) => {
   const { venueId, date = todayKey() } = req.validatedQuery || {};
   const venue = await ownedVenue(req.user, venueId);
 
-  const bookings = await Booking.find({
-    venue: venue._id,
-    date,
-    status: { $nin: [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.REJECTED] },
-  }).populate('user', 'name phone loyaltyTier').lean();
+  /**
+   * One query for the day, two views of it.
+   *
+   * This asked the database twice about the same venue and the same date: once
+   * for the bookings to draw on the grid, and again inside `takenSlotsFor` for
+   * the slots that are occupied. The two filters are not identical — one keys
+   * off `status`, the other off `slotLocked`, and `expired` rows fall on
+   * different sides of them — so deriving one from the other in memory needs
+   * the wider set, not either filter.
+   *
+   * That is what this fetches: every row for this venue on this day, which for
+   * one venue on one date is at most a few dozen documents. Both views are
+   * then filtered from it, each keeping exactly the rule its own query had, so
+   * the grid and the availability map can no longer disagree with each other.
+   */
+  const dayRows = await Booking.find({ venue: venue._id, date })
+    .populate('user', 'name phone loyaltyTier')
+    .lean();
 
+  const HIDDEN = [BOOKING_STATUS.CANCELLED, BOOKING_STATUS.REJECTED];
   const byCourtStart = new Map(
-    bookings.map((b) => [`${b.court}-${b.startMinutes}`, b])
+    dayRows
+      .filter((b) => !HIDDEN.includes(b.status))
+      .map((b) => [`${b.court}-${b.startMinutes}`, b])
   );
 
   const courts = venue.courts.filter((c) => c.isActive !== false);
-  // Shared across every court, rather than one query each.
-  const taken = await takenSlotsFor(venue, date);
+  // The same map `takenSlotsFor` builds, from rows already in hand.
+  const taken = new Map(
+    dayRows
+      .filter((b) => b.slotLocked)
+      .map((b) => [`${b.court}-${b.startMinutes}`, b.status])
+  );
 
   const grids = await Promise.all(courts.map(async (court) => {
     const grid = await buildAvailability(venue, court, date, taken);

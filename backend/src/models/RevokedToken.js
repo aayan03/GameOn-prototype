@@ -19,7 +19,7 @@ import mongoose from 'mongoose';
  */
 const revokedTokenSchema = new mongoose.Schema(
   {
-    jti: { type: String, required: true, unique: true, index: true },
+    jti: { type: String, required: true, unique: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     /**
      * When the token would have expired anyway.
