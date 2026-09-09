@@ -58,14 +58,36 @@ export async function resolvePromo(code, venue) {
   return platform ? { source: 'platform', ...platform } : null;
 }
 
-/** Blackout windows make a slot unbookable without cancelling anything. */
-function isBlackedOut(venue, court, dateKey, start) {
-  return (venue.blackouts || []).some((b) => {
-    if (b.date !== dateKey) return false;
-    if (b.court && String(b.court) !== String(court._id)) return false;
-    if (b.startMinutes == null) return true;           // whole day
-    return start >= b.startMinutes && start < b.endMinutes;
-  });
+/**
+ * The blackout windows that could touch ONE court on ONE date.
+ *
+ * Blackouts make a slot unbookable without cancelling anything, and they are
+ * stored as an ever-growing array on the venue — nothing prunes the past, so
+ * a venue that blocks a few slots a week accumulates hundreds of entries over
+ * a couple of seasons.
+ *
+ * This used to be a per-slot predicate that walked that whole array looking
+ * for the handful of entries matching today. The grid calls it once per slot
+ * per court, so the cost was blackouts x slots x courts on the busiest public
+ * endpoint in the product — around 51,000 comparisons for a six-court venue
+ * with 500 blackouts on file, to answer a question about at most a few of
+ * them.
+ *
+ * Narrowing once per court, before the loop, makes the per-slot check a walk
+ * over the entries that actually apply to this date — usually none. Same
+ * answer, same order of evaluation; `owner.controller.js#calendar` already
+ * did it this way.
+ */
+function blackoutsFor(venue, court, dateKey) {
+  const windows = [];
+  for (const b of venue.blackouts || []) {
+    if (b.date !== dateKey) continue;
+    if (b.court && String(b.court) !== String(court._id)) continue;
+    // No start time means the whole day is out, so nothing else can matter.
+    if (b.startMinutes == null) return { wholeDay: true, windows: [] };
+    windows.push(b);
+  }
+  return { wholeDay: false, windows };
 }
 
 /** What a single slot costs on this court, at this time. */
@@ -132,6 +154,9 @@ export async function buildAvailability(venue, court, dateKey, taken = null) {
   const isToday = dateKey === todayKey();
   const nowMins = minutesNow();
 
+  // Narrowed once for this court and date — see blackoutsFor.
+  const blackout = blackoutsFor(venue, court, dateKey);
+
   const slots = [];
   for (let start = open; start + slotMins <= close; start += slotMins) {
     const { amount, isPeak: peak } = priceFor(court, dateKey, start, slotMins);
@@ -147,7 +172,8 @@ export async function buildAvailability(venue, court, dateKey, taken = null) {
      */
     const isPast = isToday && start < nowMins;
 
-    const blocked = isBlackedOut(venue, court, dateKey, start);
+    const blocked = blackout.wholeDay
+      || blackout.windows.some((b) => start >= b.startMinutes && start < b.endMinutes);
 
     slots.push({
       start,

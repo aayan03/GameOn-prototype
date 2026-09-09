@@ -30,13 +30,9 @@ const operatingHourSchema = new mongoose.Schema(
 
 const venueSchema = new mongoose.Schema(
   {
-    // No field-level `index: 'text'` here. MongoDB allows exactly ONE text
-    // index per collection, so declaring one on this field created `name_text`
-    // and made the compound text index at the bottom of this file fail with
-    // IndexOptionsConflict on every single startup. Mongoose reports that
-    // through an 'index' event nobody was listening to, so it was swallowed
-    // in silence and the collection ran with a name-only search index for its
-    // entire life. The compound declaration below is the one that was meant.
+    // No `index: 'text'` here, and none anywhere else in this file either —
+    // see the note above the index declarations at the bottom for why this
+    // collection deliberately carries no text index at all.
     name: { type: String, required: true, trim: true },
     slug: { type: String, unique: true, index: true },
     description: { type: String, default: '', maxlength: 2000 },
@@ -169,12 +165,37 @@ const venueSchema = new mongoose.Schema(
 );
 
 venueSchema.index({ location: '2dsphere' });
-// The one text index this collection is allowed. Weighted so a name match
-// outranks a passing mention in a description.
-venueSchema.index(
-  { name: 'text', description: 'text', 'address.area': 'text', 'address.city': 'text' },
-  { weights: { name: 10, 'address.area': 5, 'address.city': 5, description: 1 }, name: 'venue_search' },
-);
+
+/**
+ * There is deliberately NO text index here, and it is worth saying why,
+ * because a weighted `venue_search` index used to sit on this line and it
+ * looked like the obviously right thing.
+ *
+ * Nothing ever queried it with `$text` — discovery has always used an escaped
+ * regex — so it was pure write cost: MongoDB tokenises and stems four fields
+ * on every venue insert and every venue edit, to maintain an index no read
+ * path touches. On top of that it was the source of the IndexOptionsConflict
+ * that legacy databases logged on every startup.
+ *
+ * Switching discovery over to `$text` to make use of it does not work, and
+ * these are hard constraints rather than tuning problems:
+ *
+ *  - `$text` and `$geoNear` cannot appear in the same query. MongoDB rejects
+ *    it outright ("text and geoNear not allowed in same query"), and
+ *    `$match: { $text }` is only legal as the FIRST pipeline stage, so it
+ *    cannot be moved after the geo stage either. "Near me" plus a search term
+ *    is a combination the discovery page offers today.
+ *  - `$text` matches whole words, stemmed. The search box is debounced and
+ *    queries as you type, so "kora" would return nothing at all until
+ *    somebody finished typing "koramangala". It also tokenises on word
+ *    boundaries, so a search for "turf" does not find "Turfside".
+ *
+ * The regex the controller uses is narrowed by `isActive` first (verified by
+ * explain: an IXSCAN on isActive_1, not a collection scan) and gives the
+ * substring behaviour the UI is built around. If search ever outgrows that,
+ * the answer is Atlas Search, which does prefixes and geo together — not a
+ * `$text` index this schema cannot actually use.
+ */
 
 venueSchema.virtual('startingPrice').get(function startingPrice() {
   if (!this.courts?.length) return 0;

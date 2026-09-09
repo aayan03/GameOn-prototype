@@ -40,30 +40,11 @@ export async function connectDB() {
     mongoose.model(name).on('index', (err) => {
       if (!err) return;
 
-      /**
-       * One conflict has a known cause and a known fix, so say that instead
-       * of printing forty lines of driver stack.
-       *
-       * MongoDB permits a single text index per collection and will not alter
-       * one in place. A database created before the search index was widened
-       * still carries the old single-field `name_text`, so the new compound
-       * index cannot build. Nothing queries with `$text` today, so this is
-       * noise rather than breakage — but noise that looks alarming in a
-       * deploy log deserves to be explained where it appears.
-       */
-      const isTextIndexConflict = err.code === 85
-        && /_fts/.test(err.message || '')
-        && /already exists/i.test(err.message || '');
-
-      if (isTextIndexConflict) {
-        logger.warn(
-          'A legacy text index is blocking the venue search index. Harmless — nothing queries '
-          + 'with $text — but to clear it run:  npm run fix:indexes -- --apply',
-          { model: name },
-        );
-        return;
-      }
-
+      // The text-index conflict this used to special-case cannot happen any
+      // more: no model declares a text index, so nothing asks to build one.
+      // A database created before that change still CARRIES the old index —
+      // harmless, but it costs writes, and `npm run fix:indexes -- --apply`
+      // drops it.
       logger.error('index build failed', { err, model: name });
     });
   }

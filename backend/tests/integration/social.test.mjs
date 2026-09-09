@@ -406,6 +406,58 @@ test('price filtering uses the cheapest active court', async () => {
   assert.equal(cheap.body.data[0].name, 'Budget Turf');
 });
 
+test('a search result carries what a card draws, and nothing heavier', async () => {
+  /**
+   * The list projection names the fields a card needs rather than excluding a
+   * few it does not. It used to be the other way round, so every result
+   * shipped the whole venue document — the 2,000-character description, the
+   * operating hours, the moderation trail, and `blackouts`, which grows for
+   * as long as the venue keeps taking slots out of service. Twelve of those
+   * per page, to render a name, an image, a price and a rating.
+   */
+  const owner = await createUser({ role: 'owner' });
+  const venue = await createVenue(owner);
+
+  // Give the venue the bulk a real listing accumulates.
+  await mongoose.model('Venue').updateOne({ _id: venue._id }, {
+    $set: { description: 'x'.repeat(2000) },
+    $push: {
+      blackouts: {
+        $each: Array.from({ length: 200 }, (_, i) => ({
+          date: `2020-01-${String((i % 28) + 1).padStart(2, '0')}`,
+          court: null, startMinutes: 0, endMinutes: 1440, reason: 'Old closure',
+        })),
+      },
+    },
+  });
+
+  const res = await get('/api/venues');
+  assert.equal(res.status, 200);
+  const card = res.body.data.find((v) => String(v._id) === String(venue._id));
+  assert.ok(card, 'the venue should still be discoverable');
+
+  // Everything VenueCard renders.
+  for (const field of ['_id', 'slug', 'name', 'sports', 'address', 'bookingMode', 'rating', 'reviewCount']) {
+    assert.notEqual(card[field], undefined, `a card cannot be drawn without ${field}`);
+  }
+  assert.equal(typeof card.startingPrice, 'number', 'the card prints a starting price');
+  assert.equal(card.address.city, 'Bengaluru', 'the card prints an area and city');
+
+  // ...and nothing a card never reads.
+  for (const field of [
+    'blackouts', 'description', 'courts', 'operatingHours', 'cancellationPolicy',
+    'manualContact', 'commissionPercent', 'moderationStatus', 'moderationNote',
+    'moderatedBy', 'owner', 'location',
+  ]) {
+    assert.equal(card[field], undefined, `${field} has no business on a search result`);
+  }
+
+  // The detail page is where the full record lives, so this must still work.
+  const detail = await get(`/api/venues/${venue._id}`);
+  assert.equal(detail.status, 200);
+  assert.ok(Array.isArray(detail.body.data.venue.courts), 'the venue page still returns courts');
+});
+
 test('a venue page does not expose the platform’s commercial terms', async () => {
   const owner = await createUser({ role: 'owner' });
   const venue = await createVenue(owner);

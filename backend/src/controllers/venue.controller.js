@@ -166,11 +166,44 @@ export const listVenues = asyncHandler(async (req, res) => {
   // Featured venues (paid listings) surface first unless the user sorts by price/distance.
   pipeline.push({ $sort: sort });
 
+  /**
+   * Name what a card needs, rather than excluding what it does not.
+   *
+   * This was an EXCLUSION projection listing three fields, which meant every
+   * search result carried the whole venue document: the 2,000-character
+   * description, the seven operating-hour subdocuments, the court array, the
+   * moderation trail — and `blackouts`, which is unbounded and grows for as
+   * long as the venue keeps taking slots out of service. Twelve of those per
+   * page, to draw a card that renders a name, an image, a price and a rating.
+   *
+   * An inclusion list also fails safe in the other direction: a field added
+   * to the schema later is private until somebody decides it belongs on a
+   * public card, rather than being published the moment it exists.
+   *
+   * `startingPrice` and `distanceKm` are computed by the $addFields above,
+   * not stored, so they have to be named here too.
+   */
+  const CARD_FIELDS = {
+    _id: 1,
+    slug: 1,
+    name: 1,
+    images: 1,
+    sports: 1,
+    address: 1,
+    bookingMode: 1,
+    isFeatured: 1,
+    isClaimed: 1,
+    rating: 1,
+    reviewCount: 1,
+    startingPrice: 1,
+    distanceKm: 1,
+  };
+
   pipeline.push({
     $facet: {
       items: [
         { $skip: skip }, { $limit: limit },
-        { $project: { __v: 0, 'courts.createdAt': 0, distanceMeters: 0 } },
+        { $project: CARD_FIELDS },
       ],
       total: [{ $count: 'count' }],
     },

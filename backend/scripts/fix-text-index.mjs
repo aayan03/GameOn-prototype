@@ -1,20 +1,25 @@
 /**
- * Replaces a legacy single-field text index with the compound search index.
+ * Drops the text indexes on `venues`, which nothing queries.
  *
  *   node scripts/fix-text-index.mjs           # show what would change
  *   node scripts/fix-text-index.mjs --apply   # actually change it
  *
- * MongoDB allows exactly one text index per collection and will not alter one
- * in place. An older build of this app declared `index: 'text'` on Venue.name,
- * which created `name_text`; the current schema wants a weighted index across
- * name, description, area and city. On any database created before that
- * change, the new index cannot build and every startup logs an
- * IndexOptionsConflict.
+ * This script used to CREATE a weighted `venue_search` index, on the
+ * assumption that discovery would eventually use it. It never did, and it
+ * turns out it never can: `$text` and `$geoNear` are rejected in the same
+ * query, `$match: { $text }` is only legal as the first pipeline stage, and
+ * `$text` matches whole stemmed words rather than the prefixes a
+ * search-as-you-type box sends. See the long note in models/Venue.js.
  *
- * Dropping a text index is safe — it is derived data, rebuilt from the
- * documents, and this collection holds tens of venues, not millions. Nothing
- * currently queries with `$text` (discovery uses an escaped regex), so even
- * the seconds while it is absent change nothing user-facing.
+ * So the index was pure overhead — MongoDB tokenising and stemming four
+ * fields on every venue write to maintain something no read path touches —
+ * and on databases carrying a legacy `name_text` from an older schema it also
+ * produced an IndexOptionsConflict on every startup.
+ *
+ * Mongoose only ever CREATES indexes, never removes them, so dropping this
+ * from the schema does not drop it from a database that already has it. That
+ * is what this script is for. It is safe: a text index is derived data, and
+ * nothing reads it.
  *
  * Deliberately a script rather than something the server does on boot: an app
  * that silently drops indexes at startup is a much worse idea than a one-line
@@ -39,34 +44,24 @@ console.log(`\nConnected to ${mongoose.connection.name}\n`);
 const collection = Venue.collection;
 const indexes = await collection.indexes();
 
-const textIndexes = indexes.filter((i) => Object.values(i.key || {}).includes('text') || i.key?._fts === 'text');
+const textIndexes = indexes.filter(
+  (i) => Object.values(i.key || {}).includes('text') || i.key?._fts === 'text'
+);
 
 console.log('Text indexes currently on `venues`:');
 if (!textIndexes.length) console.log('  (none)');
 for (const i of textIndexes) {
   console.log(`  ${i.name}  weights: ${JSON.stringify(i.weights || {})}`);
 }
-
-const WANTED = 'venue_search';
-const stale = textIndexes.filter((i) => i.name !== WANTED);
-const alreadyRight = textIndexes.some((i) => i.name === WANTED);
-
 console.log('');
 
-if (alreadyRight && !stale.length) {
-  console.log(`Nothing to do — "${WANTED}" is present and is the only text index.\n`);
+if (!textIndexes.length) {
+  console.log('Nothing to do — this collection carries no text index, which is what the schema wants.\n');
   await mongoose.disconnect();
   process.exit(0);
 }
 
-if (!stale.length && !alreadyRight) {
-  console.log(`No text index at all. Creating "${WANTED}".`);
-}
-
-for (const i of stale) {
-  console.log(`Would drop:   ${i.name}`);
-}
-if (!alreadyRight) console.log(`Would create: ${WANTED} (name, description, address.area, address.city)`);
+for (const i of textIndexes) console.log(`Would drop: ${i.name}`);
 
 if (!apply) {
   console.log('\nNothing changed. Re-run with --apply to do it.\n');
@@ -75,17 +70,9 @@ if (!apply) {
 }
 
 console.log('');
-for (const i of stale) {
+for (const i of textIndexes) {
   await collection.dropIndex(i.name);
   console.log(`  dropped ${i.name}`);
-}
-
-if (!alreadyRight) {
-  await collection.createIndex(
-    { name: 'text', description: 'text', 'address.area': 'text', 'address.city': 'text' },
-    { weights: { name: 10, 'address.area': 5, 'address.city': 5, description: 1 }, name: WANTED },
-  );
-  console.log(`  created ${WANTED}`);
 }
 
 const after = (await collection.indexes())

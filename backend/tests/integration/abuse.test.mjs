@@ -465,6 +465,65 @@ test('a partial-day blackout blocks only the hours it covers', async () => {
   }, { token: player.token })).status, 201, 'hours outside the window are still bookable');
 });
 
+test('one relevant blackout is still found among a season of stale ones', async () => {
+  /**
+   * `blackoutsFor` narrows the venue's blackout array to this court and date
+   * once per court, instead of walking the whole array once per slot. Nothing
+   * prunes the past, so that array is mostly history — this is the shape the
+   * narrowing has to keep getting right: hundreds of entries on file, one of
+   * them about today.
+   */
+  const owner = await createUser({ role: 'owner' });
+  const player = await createUser();
+  const venue = await createVenue(owner);
+  await fundWallet(player.id, 50000);
+  const date = dateKey(2);
+
+  const grid = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const court = grid.body.data.courts[0];
+  const open = court.slots.filter((s) => s.status === 'available');
+  const blocked = open[0];
+  const free = open[open.length - 1];
+
+  // 300 blackouts for dates that are nothing to do with this booking.
+  const noise = Array.from({ length: 300 }, (_, i) => ({
+    date: dateKey(-(i + 1)),
+    court: null,
+    startMinutes: 0,
+    endMinutes: 1440,
+    reason: 'Old closure',
+  }));
+  await mongoose.model('Venue').updateOne(
+    { _id: venue._id },
+    { $push: { blackouts: { $each: noise } } }
+  );
+
+  // ...and one that is.
+  await post('/api/owner/blackouts', {
+    venueId: venue._id, date, reason: 'Resurfacing',
+    startMinutes: blocked.start, endMinutes: blocked.end,
+  }, { token: owner.token });
+
+  const after = await get(`/api/venues/${venue._id}/availability?date=${date}`);
+  const slots = after.body.data.courts[0].slots;
+  assert.equal(
+    slots.find((s) => s.start === blocked.start).status, 'blocked',
+    'the one blackout that applies to this date was lost among the stale ones'
+  );
+  assert.equal(
+    slots.find((s) => s.start === free.start).status, 'available',
+    'a stale blackout for another date must not block anything today'
+  );
+
+  assert.equal((await post('/api/bookings', {
+    venueId: venue._id, courtId: court.courtId, date, starts: [blocked.start],
+  }, { token: player.token })).status, 400);
+
+  assert.equal((await post('/api/bookings', {
+    venueId: venue._id, courtId: court.courtId, date, starts: [free.start],
+  }, { token: player.token })).status, 201);
+});
+
 test('the quote endpoint refuses a blacked-out slot too', async () => {
   // Quote and create must agree, or the player is shown a price for a slot
   // that will then be refused at the moment they commit to it.
