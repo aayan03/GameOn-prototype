@@ -34,7 +34,7 @@ export function EventCard({ event }) {
               : null}
       </div>
 
-      <h3 className="event-title">{event.title}</h3>
+      <h2 className="event-title">{event.title}</h2>
 
       <div className="event-meta">
         <span className="event-when">{eventWhen(event.startsAt)}</span>
@@ -208,11 +208,11 @@ export default function Events() {
             : (
               <div className="card card-pad empty" style={{ gridColumn: '1 / -1' }}>
                 <div className="empty-icon">📅</div>
-                <h3>
+                <h2>
                   {mine === 'going'
                     ? 'You have not signed up for anything yet'
                     : 'Nothing on just yet'}
-                </h3>
+                </h2>
                 <p className="text-soft" style={{ marginTop: 8, marginBottom: 18 }}>
                   {mine === 'going'
                     ? 'Events you register for will show up here.'

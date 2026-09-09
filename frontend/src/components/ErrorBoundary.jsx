@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { report } from '../utils/errorReporter.js';
 
 /**
  * A failed dynamic import, rather than a bug in the page.
@@ -26,6 +27,20 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('Render error:', error, info);
+
+    /**
+     * The message below promises "We have logged it", which was not true in
+     * production until this line existed — nothing on the client reported
+     * anywhere. A stale-chunk error is deliberately excluded: it means the
+     * user's tab predates the last deploy, which is expected after every
+     * release and would bury the real crashes under it.
+     */
+    if (!isStaleChunkError(error)) {
+      report(error, {
+        tags: { kind: 'react-render' },
+        extra: { componentStack: String(info?.componentStack || '').slice(0, 2000) },
+      });
+    }
   }
 
   render() {

@@ -329,7 +329,7 @@ export default function Venues() {
           {!loading && !venues.length && !error && (
             <div className="card card-pad empty">
               <div className="empty-icon">🔍</div>
-              <h3>No venues match those filters</h3>
+              <h2>No venues match those filters</h2>
               <p className="text-soft" style={{ marginTop: 6, marginBottom: 18 }}>
                 Try widening your radius, clearing a filter, or searching a different area.
               </p>

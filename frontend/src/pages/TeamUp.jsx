@@ -297,7 +297,7 @@ export default function TeamUp() {
       {!loading && !posts.length && !error && (
         <div className="card card-pad empty">
           <div className="empty-icon">🤝</div>
-          <h3>No open games right now</h3>
+          <h2>No open games right now</h2>
           <p className="text-soft" style={{ marginTop: 8, marginBottom: 22 }}>
             Be the first to post one — nearby players with the right skill level will see it.
           </p>

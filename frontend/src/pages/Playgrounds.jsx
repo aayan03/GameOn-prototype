@@ -184,7 +184,7 @@ export default function Playgrounds() {
       ) : !rows.length ? (
         <div className="card card-pad empty" style={{ marginTop: 20 }}>
           <div className="empty-icon">🌳</div>
-          <h3>No free grounds listed here yet</h3>
+          <h2>No free grounds listed here yet</h2>
           <p className="text-soft" style={{ marginTop: 8, marginBottom: 18, maxWidth: '46ch', marginInline: 'auto' }}>
             This map is built by players. If you know a park or maidan people can
             use for nothing, you can be the first to put it on here.

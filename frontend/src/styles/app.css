@@ -462,6 +462,27 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
    7. EMPTY STATES / MISC
    ═══════════════════════════════════════════════════════════════ */
 .empty { padding: 62px 26px; text-align: center; }
+/*
+  These headings are h2 for the document outline, not for their size.
+
+  Every page has an h1 and then, on most of them, nothing until the footer —
+  so an empty state marked up as h3 made the outline skip a level, and screen
+  reader users navigating by heading heard a section that was not there. The
+  tag carries the semantics; this rule keeps the appearance it always had,
+  since the base h2 is nearly twice the size.
+*/
+.empty h2 { font-size: 1.24rem; }
+
+/*
+  Legal section headings, same reasoning as .empty h2 above.
+
+  A policy document's sections sit directly under the page h1, so h2 is the
+  honest level — they were h3, which made every one of these pages skip a
+  level for anyone navigating by heading. There are 29 of them across Terms,
+  Privacy, Refunds and Contact, and at the base h2 size they would each read
+  as a page title.
+*/
+.legal-body h2 { font-size: 1.24rem; }
 .empty-icon {
   font-size: 3.4rem; margin-bottom: 14px; display: inline-block;
   animation: float 4s ease-in-out infinite;

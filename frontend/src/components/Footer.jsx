@@ -52,9 +52,18 @@ export default function Footer() {
 
           {Object.entries(LINKS).map(([heading, links]) => (
             <div key={heading}>
-              {/* h3, not h4 — these sit under the page h2s, and skipping a
-                  level makes the document outline lie. */}
-              <h3 className="footer-heading">{heading}</h3>
+              {/*
+                h2. These were h3 on the assumption that they sit under the
+                page's h2s — but most pages go straight from their h1 to this
+                footer with nothing in between, so on those the outline jumped
+                a level. The footer's columns are top-level sections of the
+                footer landmark, which is what h2 means here.
+
+                Screen-reader users navigate by heading level, and a skipped
+                level reads as a missing section. All the styling is on
+                .footer-heading, so this changes nothing visually.
+              */}
+              <h2 className="footer-heading">{heading}</h2>
               {links.map((l) => (
                 <Link key={l.to} to={l.to} className="footer-link">{l.label}</Link>
               ))}
