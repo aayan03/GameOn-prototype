@@ -799,3 +799,94 @@ test('paying for held slots frees the allowance again', async () => {
   }
 });
 
+/* ── The terms travel with the booking (GO-05) ───────────────── */
+
+/**
+ * `refundFor` used to read the venue's CURRENT cancellation policy, and an
+ * owner may rewrite that whenever they like. Widening the free-cancellation
+ * window after the fact therefore deleted the refund every already-booked
+ * customer had been shown before they paid.
+ */
+test('an owner cannot rewrite the refund terms of a booking already made', async () => {
+  const { owner, player, venue, date, slot } = await scenario({
+    venue: {
+      // Booked 2 days out, so 24h free cancellation means a full refund.
+      cancellationPolicy: { freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50 },
+    },
+  });
+
+  const created = await post('/api/bookings', bookBody(venue, slot, date), { token: player.token });
+  assert.equal(created.status, 201);
+  const { groupRef, totalAmount } = created.body.data.booking;
+  assert.equal(created.body.data.booking.refundPreview?.percent ?? 100, 100);
+
+  // The owner now demands a week's notice for any refund at all.
+  const settings = await patch(`/api/owner/venues/${venue._id}/settings`, {
+    cancellationPolicy: {
+      freeCancellationHours: 168, partialRefundHours: 168, partialRefundPercent: 0,
+    },
+  }, { token: owner.token });
+  assert.equal(settings.status, 200, JSON.stringify(settings.body));
+
+  const before = (await mongoose.model('User').findById(player.id).lean()).walletBalance;
+  const res = await patch(`/api/bookings/${groupRef}/cancel`, {}, { token: player.token });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.refund.percent, 100,
+    'the terms this booking was made under still apply');
+  assert.equal(res.body.data.refund.amount, totalAmount);
+  assert.equal(
+    (await mongoose.model('User').findById(player.id).lean()).walletBalance,
+    before + totalAmount
+  );
+});
+
+test('the new terms do apply to bookings made after the change', async () => {
+  const { owner, player, venue } = await scenario({
+    venue: {
+      cancellationPolicy: { freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50 },
+    },
+  });
+
+  await patch(`/api/owner/venues/${venue._id}/settings`, {
+    cancellationPolicy: {
+      freeCancellationHours: 168, partialRefundHours: 168, partialRefundPercent: 0,
+    },
+  }, { token: owner.token });
+
+  const date = dateKey(2);
+  const slot = await firstOpenSlot(venue._id, date);
+  const created = await post('/api/bookings', bookBody(venue, slot, date), { token: player.token });
+  assert.equal(created.status, 201);
+
+  const res = await patch(`/api/bookings/${created.body.data.booking.groupRef}/cancel`,
+    {}, { token: player.token });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.refund.amount, 0, 'this one agreed to the stricter terms');
+});
+
+test('the snapshot is what the booking screen quotes back', async () => {
+  const { owner, player, venue, date, slot } = await scenario({
+    venue: {
+      cancellationPolicy: { freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50 },
+    },
+  });
+  const created = await post('/api/bookings', bookBody(venue, slot, date), { token: player.token });
+  const { groupRef } = created.body.data.booking;
+
+  await patch(`/api/owner/venues/${venue._id}/settings`, {
+    cancellationPolicy: {
+      freeCancellationHours: 168, partialRefundHours: 168, partialRefundPercent: 0,
+    },
+  }, { token: owner.token });
+
+  // What the player is SHOWN before they cancel has to match what they get.
+  const detail = await get(`/api/bookings/${groupRef}`, { token: player.token });
+  assert.equal(detail.body.data.refundPreview.percent, 100);
+
+  const list = await get('/api/bookings', { token: player.token });
+  const mine = list.body.data.upcoming.find((g) => g.groupRef === groupRef);
+  assert.equal(mine.refundPreview.percent, 100);
+});
+

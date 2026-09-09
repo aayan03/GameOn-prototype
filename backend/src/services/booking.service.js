@@ -343,10 +343,36 @@ export async function quoteBooking({ venue, court, dateKey, starts, promoCode, t
  * Refund owed if this booking were cancelled right now, per the venue policy.
  * Returned to the UI before the user commits, so there are no surprises.
  */
+/** The platform default, used when neither the booking nor the venue says. */
+const DEFAULT_POLICY = {
+  freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50,
+};
+
+/**
+ * The terms that apply to THIS booking.
+ *
+ * The snapshot taken at booking time wins. Reading the venue's live policy
+ * instead meant an owner could set `freeCancellationHours: 0` after taking
+ * bookings and delete the refund rights of every customer who had already
+ * paid — the terms they were shown, and agreed to, simply stopped existing.
+ *
+ * Rows created before the snapshot existed carry nulls, and fall back to the
+ * venue as they always did.
+ */
+export function policyFor(booking, venue) {
+  const snap = booking?.policySnapshot;
+  if (snap && snap.freeCancellationHours != null && snap.partialRefundHours != null) {
+    return {
+      freeCancellationHours: snap.freeCancellationHours,
+      partialRefundHours: snap.partialRefundHours,
+      partialRefundPercent: snap.partialRefundPercent ?? DEFAULT_POLICY.partialRefundPercent,
+    };
+  }
+  return venue?.cancellationPolicy || DEFAULT_POLICY;
+}
+
 export function refundFor(booking, venue) {
-  const policy = venue?.cancellationPolicy || {
-    freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50,
-  };
+  const policy = policyFor(booking, venue);
 
   const hoursUntil = (new Date(booking.startsAt) - Date.now()) / 3600000;
 

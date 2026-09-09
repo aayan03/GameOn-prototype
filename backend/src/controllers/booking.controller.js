@@ -103,6 +103,9 @@ function groupBookings(rows) {
         players: b.players,
         payment: b.payment,
         cancellation: b.cancellation,
+        // Carried through so refundFor sees the terms this booking was made
+        // under, not whatever the venue publishes today.
+        policySnapshot: b.policySnapshot,
         notes: b.notes,
         createdAt: b.createdAt,
         startsAt: b.startsAt,
@@ -296,6 +299,11 @@ export const createBooking = asyncHandler(async (req, res) => {
   // Same reasoning as bookingRef — see the note on Booking.shortRef.
   const groupRef = shortRef('GRP');
 
+  // Read once, written onto every row below. See Booking.policySnapshot.
+  const policy = venue.cancellationPolicy || {
+    freeCancellationHours: 24, partialRefundHours: 6, partialRefundPercent: 50,
+  };
+
   // Spread the discount and fee proportionally across the slots so each
   // document's totalAmount sums back to the quoted total.
   const perSlot = q.slots.map((slot) => {
@@ -335,6 +343,13 @@ export const createBooking = asyncHandler(async (req, res) => {
       promoCode: promoCode ? promoCode.toUpperCase() : '',
       promoOwner: q.promoOwner || null,
       confirmedAt: confirmedNow ? new Date() : null,
+      // The terms this customer is agreeing to, frozen. The owner may edit
+      // the venue's policy tomorrow; it does not reach back to this booking.
+      policySnapshot: {
+        freeCancellationHours: policy.freeCancellationHours,
+        partialRefundHours: policy.partialRefundHours,
+        partialRefundPercent: policy.partialRefundPercent,
+      },
       payment: { method: paymentMethod, status: 'unpaid' },
     })));
   } catch (err) {
@@ -504,7 +519,12 @@ export const myBookings = asyncHandler(async (req, res) => {
     const live = g.status === BOOKING_STATUS.PENDING || g.status === BOOKING_STATUS.CONFIRMED;
     if (live && new Date(g.endsAt).getTime() > now) {
       g.refundPreview = refundFor(
-        { startsAt: g.startsAt, totalAmount: g.totalAmount, payment: g.payment },
+        {
+          startsAt: g.startsAt,
+          totalAmount: g.totalAmount,
+          payment: g.payment,
+          policySnapshot: g.policySnapshot,
+        },
         g.venue
       );
       upcoming.push(g);
@@ -538,7 +558,12 @@ export const getBooking = asyncHandler(async (req, res) => {
 
   const [group] = groupBookings(rows);
   group.refundPreview = refundFor(
-    { startsAt: group.startsAt, totalAmount: group.totalAmount, payment: group.payment },
+    {
+      startsAt: group.startsAt,
+      totalAmount: group.totalAmount,
+      payment: group.payment,
+      policySnapshot: group.policySnapshot,
+    },
     group.venue
   );
   return ok(res, group);
@@ -564,7 +589,14 @@ export const cancelBooking = asyncHandler(async (req, res) => {
   // Only ever refund what was actually taken, not the quoted total.
   const totalPaid = live.reduce((s, b) => s + (b.payment?.amountPaid || 0), 0);
   const refund = refundFor(
-    { startsAt: live[0].startsAt, totalAmount: totalPaid, payment: live[0].payment },
+    {
+      startsAt: live[0].startsAt,
+      totalAmount: totalPaid,
+      payment: live[0].payment,
+      // The terms as they stood when this booking was made — not whatever
+      // the venue publishes now. See Booking.policySnapshot.
+      policySnapshot: live[0].policySnapshot,
+    },
     venue
   );
 

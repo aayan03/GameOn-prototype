@@ -30,12 +30,25 @@ import logger from '../utils/logger.js';
  * the platform, so there is nothing here to return.
  */
 
-/** How was this booking group actually paid for? */
-function methodOf(rows) {
+/**
+ * How was this booking group actually paid for?
+ *
+ * `paymentId` is for the one case where the rows cannot answer: a capture
+ * that landed AFTER the slot hold expired. Nothing ever marked those rows
+ * paid — that only happens on a successful verify — so `transactionId` is
+ * empty and this used to fall through to 'wallet', turning a real card
+ * payment into store credit. That is precisely the failure the note at the
+ * top of this file exists to prevent, reached by the one path that never had
+ * a transaction id to show.
+ *
+ * The caller in that situation has the id from the gateway itself, and it is
+ * better evidence than the row.
+ */
+function methodOf(rows, paymentId = null) {
   const p = rows[0]?.payment || {};
   // `/verify` and the webhook both stamp the same transactionId across every
   // row of a group, so one payment id settles the whole booking.
-  if (p.method === 'gateway' && p.transactionId) return 'gateway';
+  if (p.method === 'gateway' && (p.transactionId || paymentId)) return 'gateway';
   if (p.method === 'pay_at_venue') return 'at_venue';
   return 'wallet';
 }
@@ -53,11 +66,14 @@ function methodOf(rows) {
  */
 export async function issueRefund({
   groupRef, rows, amount, user, description = 'Refund', reference = '',
+  // The gateway's own payment id, when the caller knows it and the rows do
+  // not. See methodOf.
+  paymentId = null,
 }) {
   const payable = Math.round(Number(amount) || 0);
   if (payable <= 0) return { refunded: 0, method: 'none', reference: '' };
 
-  const method = methodOf(rows);
+  const method = methodOf(rows, paymentId);
   if (method === 'at_venue') {
     // The venue kept the notes. Refunding platform money here would mint it.
     return { refunded: 0, method: 'at_venue', reference: '' };
@@ -89,11 +105,13 @@ export async function issueRefund({
   };
 
   if (method === 'gateway' && payments.isLive()) {
-    const paymentId = rows[0].payment.transactionId;
+    // Prefer what the row records; fall back to the id the caller supplied,
+    // which is the only one that exists for a post-expiry capture.
+    const chargeId = rows[0].payment?.transactionId || paymentId;
     try {
-      const result = await payments.refundPayment(paymentId, payable);
+      const result = await payments.refundPayment(chargeId, payable);
       logger.info('gateway refund issued', {
-        groupRef, paymentId, amount: payable, refundId: result?.id,
+        groupRef, paymentId: chargeId, amount: payable, refundId: result?.id,
       });
       return settle('gateway', result?.id || '');
     } catch (err) {
@@ -108,7 +126,7 @@ export async function issueRefund({
        * the ledger row says plainly what happened.
        */
       logger.error('gateway refund FAILED - falling back to wallet credit, settle this by hand', {
-        err, groupRef, paymentId, amount: payable,
+        err, groupRef, paymentId: chargeId, amount: payable,
       });
       await wallet.credit(user, payable, {
         type: 'refund',
@@ -116,7 +134,7 @@ export async function issueRefund({
         description: `${description} (card refund failed — credited to wallet)`,
         reference,
       });
-      return settle('wallet_fallback', paymentId);
+      return settle('wallet_fallback', chargeId);
     }
   }
 

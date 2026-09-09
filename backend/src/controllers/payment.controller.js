@@ -111,12 +111,50 @@ export const verify = asyncHandler(async (req, res) => {
    * else may hold it now), so the money is.
    */
   if (rows[0].status === BOOKING_STATUS.EXPIRED) {
+    /**
+     * This branch runs before the signature check, because an expired hold
+     * has to be handled whatever the caller can prove — so guard the two
+     * things the signature would otherwise have covered.
+     *
+     * The order must be the one THIS booking created, and the payment must
+     * not already belong to another booking. Without those, someone holding
+     * an expired booking of their own could name a stranger's captured
+     * payment id and have it refunded off their card.
+     */
+    if (!rows[0].payment.orderId || rows[0].payment.orderId !== orderId) {
+      throw ApiError.badRequest('That payment does not belong to this booking');
+    }
+    const claimedElsewhere = await Booking.exists({
+      'payment.transactionId': paymentId,
+      groupRef: { $ne: groupRef },
+    });
+    if (claimedElsewhere) {
+      throw ApiError.badRequest('That payment has already been used for another booking');
+    }
+
     const captured = await payments.fetchPayment(paymentId).catch(() => null);
     const amount = captured && ['captured', 'authorized'].includes(captured.status)
       ? Math.round(captured.amount / 100)
       : 0;
 
     if (amount > 0) {
+      /**
+       * Record the capture on the rows before refunding it.
+       *
+       * Two reasons. The audit trail is one: without it the booking says a
+       * refund was issued and never says what was refunded. The other is that
+       * `issueRefund` reads the method off the row — and an expired booking
+       * was never marked paid, so `transactionId` is empty and a real card
+       * payment used to be returned as WALLET CREDIT. The explicit
+       * `paymentId` below is the belt to this braces.
+       */
+      await Booking.updateMany({ groupRef }, {
+        $set: {
+          'payment.transactionId': paymentId,
+          'payment.amountPaid': 0,   // the money is going straight back out
+        },
+      });
+
       await refunds.issueRefund({
         groupRef,
         rows,
@@ -124,6 +162,9 @@ export const verify = asyncHandler(async (req, res) => {
         user: req.user,
         description: 'Slot hold expired before the payment completed',
         reference: paymentId,
+        // The rows cannot name the charge — this is the only path where a
+        // capture exists that verify never got to record.
+        paymentId,
       });
       logger.warn('payment landed after hold expiry - refunded', {
         groupRef, paymentId, amount,

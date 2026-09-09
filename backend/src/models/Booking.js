@@ -62,6 +62,24 @@ const bookingSchema = new mongoose.Schema(
       amountPaid: { type: Number, default: 0, min: 0 },
     },
 
+    /**
+     * The cancellation terms as they stood when this booking was made.
+     *
+     * `refundFor` used to read the venue's CURRENT policy at cancellation
+     * time, and an owner may edit that policy whenever they like — so setting
+     * `freeCancellationHours: 0` retroactively deleted the refund every
+     * already-booked customer had been shown before they paid. The terms a
+     * customer agreed to have to travel with the booking.
+     *
+     * Null on rows written before this existed; `refundFor` falls back to the
+     * venue for those.
+     */
+    policySnapshot: {
+      freeCancellationHours: { type: Number, default: null },
+      partialRefundHours: { type: Number, default: null },
+      partialRefundPercent: { type: Number, default: null },
+    },
+
     cancellation: {
       cancelledAt: { type: Date, default: null },
       cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
