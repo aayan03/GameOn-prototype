@@ -548,8 +548,35 @@ button.avatar:hover { transform: translateY(-2px) rotate(-4deg); }
 }
 .hero-inner { position: relative; z-index: 2; }
 
-/* Floating sport stickers scattered behind the copy */
-.hero-deco { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+/*
+  Floating sport stickers, in the right-hand column.
+
+  ABOVE .hero-inner, not below it, and that is the difference between eight
+  links and one. `.hero-inner` is a full-width `.container`: its content sits
+  in the left column, but its box spans both, and a transparent box still
+  takes the click. With this layer at z-index 1 the container covered every
+  tile inside its bounds — measured at 1440px, seven of the eight hit-tested
+  as `div.container.hero-inner` and only tennis, whose centre landed one
+  pixel past the container's right edge, could be clicked at all.
+
+  `z-index: 3` on `.hero-blob:hover` looks as though it lifts a tile clear,
+  and never could: this element is positioned with a z-index, so it forms a
+  stacking context, and nothing inside one can rise above the level of the
+  context itself.
+
+  Raising the layer is safe because it is still click-through everywhere
+  except the tiles themselves, so the search box, chips and stats underneath
+  keep their clicks. And the tiles do not overlap the copy. The closest any
+  tile comes to real content, including the float animation's full 11px of
+  upward travel, is 23px at 1201px — the narrowest width this layer shows at,
+  and therefore the worst case — rising to 98px at 1440 and 162px at 1920.
+
+  That 23px is the budget. A longer headline, a bigger search box or a tile
+  moved further left eats into it, and past zero a tile sits ON the copy and
+  takes its clicks. Which is at least visible, where the bug this replaces —
+  a tile silently dead behind a transparent box — was not.
+*/
+.hero-deco { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .hero-blob {
   position: absolute;
   display: grid; place-items: center;
