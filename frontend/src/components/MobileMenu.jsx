@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { navSections } from '../config/nav.js';
@@ -67,7 +68,23 @@ export default function MobileMenu() {
         <span className="nav-more-bars" aria-hidden="true"><span /><span /><span /></span>
       </button>
 
-      {open && (
+      {/*
+        Rendered into <body>, not here inside the nav.
+
+        `.nav` is sticky with a z-index, which makes it a stacking context: a
+        z-index on anything inside it only ranks against the nav's other
+        children. So the sheet's 1200 never competed with the bottom tab bar
+        at all — the tab bar (950) outranked the whole nav (900), and painted
+        straight across the bottom of the open sheet. Whatever sat in that
+        band was unreachable even scrolled to the end, and for an admin that
+        is "Admin dashboard", the last item in the menu. Guests lost "Sign
+        up" on a short phone the same way.
+
+        A portal takes the sheet out of the nav's stacking context. The
+        outside-click check below still works, because `contains` follows the
+        DOM, and every token the sheet uses is defined on :root.
+      */}
+      {open && createPortal(
         <div className="sheet-backdrop" role="presentation">
           <div className="sheet" role="menu" aria-label="Menu" ref={panelRef}>
             <div className="sheet-head">
@@ -125,7 +142,8 @@ export default function MobileMenu() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

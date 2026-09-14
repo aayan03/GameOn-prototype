@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import useGeolocation from '../hooks/useGeolocation.js';
 import useDebounce from '../hooks/useDebounce.js';
 import VenueCard, { VenueCardSkeleton } from '../components/VenueCard.jsx';
+import ClearFilters from '../components/ClearFilters.jsx';
 import { SPORT_LABELS, rupees } from '../utils/format.js';
 import { IconSearch, IconLocate, IconFilter, IconClose, IconBolt, IconPhone } from '../components/Icons.jsx';
 import SportIcon from '../components/SportIcon.jsx';
@@ -115,6 +116,18 @@ export default function Venues() {
     (filters.sport ? 1 : 0) + (filters.city ? 1 : 0) + (filters.bookingMode ? 1 : 0) +
     filters.amenities.length + (filters.maxPrice ? 1 : 0) + (filters.minRating ? 1 : 0);
 
+  /**
+   * Is there anything for "Clear" to clear?
+   *
+   * Not `activeCount`, which is the number on the Filters button and leaves
+   * out search text, Near me and sort order — so a visitor who had only
+   * searched was never offered a way back. Every URL parameter is something
+   * this page narrowed by, apart from `page`. The typed text counts too,
+   * because it reaches the URL only after the debounce.
+   */
+  const hasFilters = Boolean(searchInput)
+    || [...params.entries()].some(([key, value]) => key !== 'page' && value);
+
   const clearAll = () => { setSearchInput(''); setParams(new URLSearchParams(), { replace: true }); };
 
   return (
@@ -178,13 +191,16 @@ export default function Venues() {
         ))}
       </div>
 
+      {/* Outside the drawer, so a phone shows it without opening Filters. */}
+      {hasFilters && <ClearFilters onClear={clearAll} />}
+
       <div className="venues-layout">
         {/* ── Filter sidebar ─────────────────────────────────── */}
         <aside className={`filters${showFilters ? ' open' : ''}`}>
           <div className="filters-head">
             <strong>Filters</strong>
             <div className="row gap-8">
-              {activeCount > 0 && <button className="link-btn" onClick={clearAll}>Clear all</button>}
+              {hasFilters && <button className="link-btn" onClick={clearAll}>Clear all</button>}
               <button className="icon-btn filters-close" onClick={() => setShowFilters(false)} aria-label="Close filters">
                 <IconClose style={{ width: 18, height: 18 }} />
               </button>
@@ -333,7 +349,7 @@ export default function Venues() {
               <p className="text-soft" style={{ marginTop: 6, marginBottom: 18 }}>
                 Try widening your radius, clearing a filter, or searching a different area.
               </p>
-              <button className="btn btn-primary" onClick={clearAll}>Clear all filters</button>
+              {hasFilters && <button className="btn btn-primary" onClick={clearAll}>Clear all filters</button>}
             </div>
           )}
 

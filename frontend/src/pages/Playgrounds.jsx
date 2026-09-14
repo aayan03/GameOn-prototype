@@ -10,6 +10,7 @@ import {
   SPORT_LABELS, accessLabel, distanceLabel,
 } from '../utils/format.js';
 import { IconSearch, IconLocate, IconPin, IconChevron, IconSparkle } from '../components/Icons.jsx';
+import ClearFilters from '../components/ClearFilters.jsx';
 
 const SPORTS = ['football', 'cricket', 'badminton', 'basketball', 'tennis', 'volleyball'];
 
@@ -64,6 +65,21 @@ export default function Playgrounds() {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
+  };
+
+  /**
+   * Location is deliberately not part of this.
+   *
+   * Near me here is not a per-page filter: it is the remembered position the
+   * whole app shares (see useGeolocation), and Home sorts venues by it too.
+   * Clearing it from this button would quietly un-sort a different page. So
+   * this resets what this page owns — the text, the sport, the city.
+   */
+  const hasFilters = Boolean(search || params.get('q') || sport || city);
+
+  const clearFilters = () => {
+    setSearch('');
+    setParams(new URLSearchParams(), { replace: true });
   };
 
   useEffect(() => {
@@ -172,6 +188,8 @@ export default function Playgrounds() {
           </button>
         ))}
       </div>
+
+      {hasFilters && <ClearFilters onClear={clearFilters} />}
 
       {!loading && rows.length > 0 && (
         <p className="text-faint" style={{ marginTop: 14, fontSize: '.9rem' }}>

@@ -6,6 +6,7 @@ import useReveal from '../hooks/useReveal.js';
 import useDebounce from '../hooks/useDebounce.js';
 import { EVENT_TYPES, EVENT_TYPE_ICONS, EVENT_TYPE_LABELS, eventWhen } from '../utils/format.js';
 import { IconSearch, IconChevron, IconUsers } from '../components/Icons.jsx';
+import ClearFilters from '../components/ClearFilters.jsx';
 
 const WHEN = [
   { key: 'all', label: 'Any time' },
@@ -93,6 +94,22 @@ export default function Events() {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
+  };
+
+  // `when` defaults to 'all', so an explicit "Any time" is not a filter.
+  const hasFilters = Boolean(search || params.get('q') || type || city || mine) || when !== 'all';
+
+  /**
+   * Back to the page as it first opens.
+   *
+   * The typed text is reset along with the URL. Clearing only the URL — what
+   * the empty-state button used to do — left the old words sitting in the
+   * search box above an unfiltered list, and the debounce never re-sent them,
+   * so the box and the results quietly disagreed.
+   */
+  const clearFilters = () => {
+    setSearch('');
+    setParams(new URLSearchParams(), { replace: true });
   };
 
   useEffect(() => {
@@ -193,6 +210,8 @@ export default function Events() {
         </div>
       )}
 
+      {hasFilters && <ClearFilters onClear={clearFilters} />}
+
       {/* ── Results ─────────────────────────────────────────── */}
       {error && <div className="alert alert-error" style={{ marginTop: 20 }}>{error}</div>}
 
@@ -220,8 +239,8 @@ export default function Events() {
                 </p>
                 {mine === 'going'
                   ? <button className="btn btn-primary" onClick={() => setFilter('mine', '')}>Browse all events</button>
-                  : (type || city || when !== 'all') && (
-                    <button className="btn btn-ghost" onClick={() => setParams({}, { replace: true })}>
+                  : hasFilters && (
+                    <button className="btn btn-ghost" onClick={clearFilters}>
                       Clear filters <IconChevron style={{ width: 15, height: 15 }} />
                     </button>
                   )}

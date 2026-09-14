@@ -7,6 +7,7 @@ import useGeolocation from '../hooks/useGeolocation.js';
 import useDebounce from '../hooks/useDebounce.js';
 import CreateGameModal from '../components/CreateGameModal.jsx';
 import PlayerChip from '../components/PlayerChip.jsx';
+import ClearFilters from '../components/ClearFilters.jsx';
 import { SPORT_LABELS, rupees, distanceLabel } from '../utils/format.js';
 import { relativeTime, prettyDate, minuteLabel, localKey } from '../utils/date.js';
 import {
@@ -156,6 +157,17 @@ export default function TeamUp() {
     }, { replace: true });
   }, [setParams]);
 
+  // Every URL parameter here is a filter except `page`; Near me lives in the
+  // URL too (lat/lng), so it clears with the rest. The typed text counts
+  // before the debounce has carried it into the URL.
+  const hasFilters = Boolean(searchInput)
+    || [...params.entries()].some(([key, value]) => key !== 'page' && value);
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setParams(new URLSearchParams(), { replace: true });
+  };
+
   useEffect(() => {
     if (debounced !== filters.q) setFilter({ q: debounced });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -283,6 +295,8 @@ export default function TeamUp() {
           </>
         )}
       </div>
+
+      {hasFilters && <ClearFilters onClear={clearFilters} />}
 
       {error && <div className="alert alert-error" style={{ marginTop: 18 }}>{error}</div>}
 
