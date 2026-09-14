@@ -253,11 +253,17 @@ export const createPlayground = asyncHandler(async (req, res) => {
    * out to every admin rather than one, because whoever gets to it first
    * should be able to.
    *
-   * Deliberately after the row is written and NOT awaited into the response
-   * path's success: a notification that fails must not lose the submission.
+   * After the row is written, and awaited. It is the `.catch` that protects the
+   * submission — a notification that fails is swallowed rather than turned
+   * into an error for a ground that is already saved — and `notifyMany`
+   * catches its own write errors besides. Leaving it un-awaited protected
+   * nothing extra. What it did do was send the 201 before the admins'
+   * notifications existed, and that is the race CI kept tripping over at
+   * random: on a busy runner the test read the collection before the insert
+   * had landed. The other handlers in this file already await theirs.
    */
   const admins = await User.find({ role: 'admin' }).select('_id name email').lean();
-  notify.notifyMany(admins.map((a) => a._id), 'playground_submitted', {
+  await notify.notifyMany(admins.map((a) => a._id), 'playground_submitted', {
     title: 'New ground to review',
     body: `${pg.name}${pg.address?.city ? ` in ${pg.address.city}` : ''} was submitted by ${req.user.name}.`,
     link: '/admin',
@@ -364,7 +370,9 @@ export const reportPlayground = asyncHandler(async (req, res) => {
   // every report after it.
   if (pg.reportCount === REPORTS_BEFORE_ALERT) {
     const admins = await User.find({ role: 'admin' }).select('_id').lean();
-    notify.notifyMany(admins.map((a) => a._id), 'playground_submitted', {
+    // Awaited, with the failure still swallowed — see the note in the submit
+    // handler for why un-awaited was a race rather than a safeguard.
+    await notify.notifyMany(admins.map((a) => a._id), 'playground_submitted', {
       title: 'A listed ground is being reported',
       body: `${pg.name} has been reported ${pg.reportCount} times. It is still live.`,
       link: '/admin',

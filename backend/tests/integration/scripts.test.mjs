@@ -18,6 +18,32 @@ const run = (script, args) => spawnSync(process.execPath, [resolve('scripts', sc
   encoding: 'utf8', env: { ...process.env, MONGO_URI: process.env.MONGO_URI },
 });
 
+/**
+ * Runs `fn` without letting it write to stdout.
+ *
+ * Under `node --test`, a test file's stdout is not a terminal: it is the pipe
+ * the runner reads that file's results back through. The seeder narrates its
+ * progress there, and text landing between results intermittently corrupts
+ * the stream — the run fails with "Unable to deserialize cloned data due to
+ * invalid or unsupported version" against this whole file, and the tests
+ * after the corruption are reported as never having run. That was a CI
+ * failure that came and went at random.
+ *
+ * Checked in isolation on Node 22 and 24: a file logging between tests failed
+ * every run, the same output sent to stderr never did, and silenced it never
+ * did. So only the stdout methods are muted; warn and error go to stderr and
+ * stay visible if something genuinely goes wrong.
+ */
+async function quietly(fn) {
+  const { log, info, debug } = console;
+  console.log = console.info = console.debug = () => {};
+  try {
+    return await fn();
+  } finally {
+    Object.assign(console, { log, info, debug });
+  }
+}
+
 test('make-admin promotes an existing account', async () => {
   const u = await createUser({ role: 'player' });
   const dry = run('make-admin.mjs', [u.email]);
@@ -41,7 +67,7 @@ test('make-admin refuses an unknown address', () => {
 
 test('purge-demo-data dry run reports without deleting', async () => {
   const { seedDatabase } = await import('../../src/seed/seed.js');
-  await seedDatabase({ connect: false });
+  await quietly(() => seedDatabase({ connect: false }));
   const { User } = await import('../../src/models/index.js');
   const before = await User.countDocuments({ email: /@gameon\.app$/ });
   assert.ok(before > 0, 'demo accounts seeded');
