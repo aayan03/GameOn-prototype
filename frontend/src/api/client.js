@@ -12,18 +12,26 @@ import { secureStorage } from '../utils/platform.js';
 const RAW_BASE = import.meta.env.VITE_API_URL || '';
 
 /**
- * The API version this build speaks.
+ * `/api`, not `/api/v1` — and that is a decision, not an oversight.
  *
- * Kept as its own constant rather than inlined, because the whole point of a
- * version prefix is that moving to the next one is a deliberate, visible edit
- * — and because a Capacitor build bakes this in and ships it to a phone that
- * may not be updated for months. The server still answers on the unversioned
- * `/api` for exactly that reason; this is what new builds should ask for.
+ * This asked for `/api/v1` for one day, and it took the site down. The
+ * frontend and the API deploy separately, and a frontend that speaks a path
+ * only the newest API serves is broken for as long as any older API is the
+ * one answering: while the backend deploy is still building, if it fails and
+ * the host keeps the previous release live, or on any machine running an older
+ * copy. Every venue list said "Route GET /api/v1/venues… not found".
+ *
+ * Every API this project has ever shipped answers on `/api`, and the server
+ * keeps it permanently as the v1 router (see API_PREFIXES in backend/src/app.js)
+ * precisely so installed apps never break. So this path works against old and
+ * new backends alike, and behaves identically to `/api/v1` on a new one.
+ *
+ * When a v2 exists, point new builds at it only once the API serving it is live
+ * everywhere those builds can reach.
  */
-export const API_VERSION = 'v1';
 export const API_BASE = RAW_BASE
-  ? `${RAW_BASE.replace(/\/$/, '')}/api/${API_VERSION}`
-  : `/api/${API_VERSION}`;
+  ? `${RAW_BASE.replace(/\/$/, '')}/api`
+  : '/api';
 
 // Same-origin `/api` is correct in development, where Vite proxies it, and in
 // the Docker stack, where nginx proxies it. On a static host like Vercel or

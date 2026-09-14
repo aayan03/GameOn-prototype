@@ -92,6 +92,20 @@ describe('requests', () => {
     await api.get('/venues', { amenities: ['parking', 'wifi'] });
     expect(new URL(spy.mock.calls[0][0]).searchParams.get('amenities')).toBe('parking,wifi');
   });
+
+  test('asks for the path every deployed API answers, not only the newest', async () => {
+    // The client asked for /api/v1 for a day. The frontend and the API deploy
+    // separately, so whenever an older API was the one answering — a backend
+    // deploy still building, or one that failed and left the previous release
+    // live — every screen failed with "Route GET /api/v1/venues… not found".
+    // Every API version serves /api, so that is the path to ask for.
+    const spy = mockFetch({ status: 200, body: { success: true, data: [] } });
+    await api.get('/venues', { sport: 'basketball' });
+
+    const { pathname } = new URL(spy.mock.calls[0][0]);
+    expect(pathname).toBe('/api/venues');
+    expect(pathname.startsWith('/api/v1/')).toBe(false);
+  });
 });
 
 describe('error handling', () => {
