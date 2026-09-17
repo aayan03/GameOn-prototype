@@ -15,7 +15,23 @@
  * that pins a CPU core, and `.*` silently matches everything.
  */
 export function escapeRegex(input) {
-  return String(input).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(input)
+    /**
+     * Null bytes go first, because they are not a regex problem — they are a
+     * serialisation one, and escaping does not touch them.
+     *
+     * A regex carrying \u0000 is legal in JavaScript and fails only when the
+     * driver writes the query, where BSON refuses it: "value must not contain
+     * null bytes". That surfaced as a 500 from every search box in the product
+     * — venues by name, area or city, events, free grounds, TeamUp, and the
+     * admin user and venue searches — because all of them build their pattern
+     * here. Anyone could raise a server error, and an alert, with one URL.
+     *
+     * Dropped rather than escaped: no venue is called "a\u0000b", so there is
+     * nothing to match and nothing to preserve.
+     */
+    .replace(/\0/g, '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
