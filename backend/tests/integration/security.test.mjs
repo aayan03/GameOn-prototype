@@ -405,6 +405,42 @@ test('a regex bomb in search is treated as literal text', async () => {
   assert.ok(ms < 5000, `search took ${ms}ms — input is reaching the regex engine unescaped`);
 });
 
+test('a null byte in a search box is not a 500', async () => {
+  /**
+   * Two tests either side of this one each covered half of it: the regex bomb
+   * above goes to a search box but carries no control characters, and the one
+   * below carries a null byte but sends it to a profile write, where BSON is
+   * happy to store one inside a string. The gap was a null byte in a value
+   * that becomes a REGEX, which BSON refuses to serialise at all:
+   * "value must not contain null bytes". Every search in the product built its
+   * pattern through the same helper, so one URL raised a 500 — and an alert —
+   * on any of them.
+   */
+  const owner = await createUser({ role: 'owner' });
+  await createVenue(owner);
+
+  const searches = [
+    '/api/venues?q=a%00b',
+    '/api/venues?city=a%00b',
+    '/api/venues?area=a%00b',
+    '/api/venues?q=%00',
+    '/api/events?q=a%00b',
+    '/api/playgrounds?q=a%00b',
+    '/api/teamup?q=a%00b',
+  ];
+  for (const url of searches) {
+    const res = await get(url);
+    assert.ok(res.status < 500, `${url} produced ${res.status}`);
+  }
+
+  // And the byte is dropped rather than the search with it: a real term still
+  // finds the venue whether or not a null byte is stuck to it.
+  const clean = await get('/api/venues?q=Test');
+  const dirty = await get('/api/venues?q=Test%00');
+  assert.equal(dirty.status, 200);
+  assert.equal(dirty.body.meta.total, clean.body.meta.total, 'the term still matches what it matched before');
+});
+
 test('control characters and RTL text survive without breaking anything', async () => {
   const user = await createUser();
   const nasty = 'Ali ce ‮gnitset‬ 🏏 <script>alert(1)</script>';

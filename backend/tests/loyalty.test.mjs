@@ -73,6 +73,11 @@ eq('escapes star',           escapeRegex('.*'), '\\.\\*');
 eq('escapes nested quantifier', escapeRegex('(a+)+'), '\\(a\\+\\)\\+');
 eq('escapes anchors',        escapeRegex('^x$'), '\\^x\\$');
 eq('plain text untouched',   escapeRegex('Koramangala'), 'Koramangala');
+// Not a regex concern but a serialisation one: a pattern carrying \u0000 is
+// valid JavaScript and fails only when the driver writes the query, which
+// turned every search box in the product into a 500.
+eq('drops null bytes',       escapeRegex('a\u0000b'), 'ab');
+eq('drops a lone null byte', escapeRegex('\u0000'), '');
 // The catastrophic-backtracking case: must complete instantly, not hang.
 {
   const evil = '(a+)+$';

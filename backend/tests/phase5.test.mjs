@@ -77,7 +77,10 @@ console.log('\n── teamup cancellation reaches the players ──');
 {
   const s = src('src/controllers/teamup.controller.js');
   const audienceAt = s.indexOf('const audience = [');
-  const clearAt = s.indexOf('post.confirmedPlayers = [];');
+  // The list is emptied by an update now, rather than by saving the document
+  // read at the top of the handler, so the marker moved with it. What is being
+  // asserted has not: the audience has to be read before it is cleared.
+  const clearAt = s.indexOf('confirmedPlayers: []');
   ok('the audience is captured before the list is emptied', audienceAt > 0 && audienceAt < clearAt);
   ok('accepted players are marked as such', /wasAccepted/.test(s));
 }

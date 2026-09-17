@@ -411,12 +411,15 @@ export const cancelPost = asyncHandler(async (req, res) => {
   // `post.confirmedPlayers` after clearing it meant the notification went to
   // the join-request list only — the people who had actually been given a
   // spot, and who most needed telling, were never notified.
+  // Read from the pre-image the claim returned, not the copy fetched at the
+  // top: anyone who joined, or any share settled, between the two would be
+  // missing from that earlier snapshot — unnotified, or never refunded.
   const audience = [
-    ...(post.confirmedPlayers || []),
+    ...(claimedCancel.confirmedPlayers || []),
     // Only people still waiting on an answer. Someone declined three weeks
     // ago, or who withdrew themselves, does not need telling that a game they
     // were never in is off.
-    ...post.joinRequests.filter((r) => ['pending', 'accepted'].includes(r.status)).map((r) => r.user),
+    ...claimedCancel.joinRequests.filter((r) => ['pending', 'accepted'].includes(r.status)).map((r) => r.user),
   ];
 
   /**
@@ -432,38 +435,81 @@ export const cancelPost = asyncHandler(async (req, res) => {
    * exactly that and no more. It runs before the arrays are cleared, because
    * clearing them is what destroys the evidence of who paid.
    */
-  const settled = post.joinRequests.filter((r) => (r.settledAmount || 0) > 0);
+  const settled = claimedCancel.joinRequests.filter((r) => (r.settledAmount || 0) > 0);
   let refunded = 0;
   for (const r of settled) {
+    /**
+     * Claim each share before returning it, on that player's own row.
+     *
+     * `settled` was read before the cancellation was claimed, and leaving a
+     * settled game gives back the same money from the same field. The two
+     * overlapped: a player tapping Leave as the host called the game off was
+     * paid their share twice — ₹800 out of a ₹400 share — because each path
+     * read the amount from its own copy of the post and neither took it off
+     * the record before paying.
+     */
+    const claimedShare = await TeamUpPost.findOneAndUpdate(
+      { _id: post._id, joinRequests: { $elemMatch: { _id: r._id, settledAmount: { $gt: 0 } } } },
+      { $set: { 'joinRequests.$[row].settledAmount': 0, 'joinRequests.$[row].settledAt': null } },
+      { new: false, arrayFilters: [{ 'row._id': r._id }] }
+    );
+    // Somebody else already gave it back — a withdrawal that got here first.
+    if (!claimedShare) continue;
+
+    const owed = claimedShare.joinRequests
+      .find((x) => String(x._id) === String(r._id))?.settledAmount || 0;
+    if (owed <= 0) continue;
+
     try {
-      await wallet.transfer(post.host, r.user, r.settledAmount, {
+      await wallet.transfer(post.host, r.user, owed, {
         description: `Refund — "${post.title}" was cancelled`,
         reference: String(post._id),
       });
-      refunded += r.settledAmount;
-      r.settledAmount = 0;
-      r.settledAt = null;
+      refunded += owed;
     } catch (err) {
       // The host has already spent it. Say so rather than pretending the
-      // cancellation was clean — this is a real debt and somebody has to know.
+      // cancellation was clean — this is a real debt and somebody has to
+      // know, so it goes back onto the record the claim just cleared.
+      await TeamUpPost.updateOne(
+        { _id: post._id, 'joinRequests._id': r._id },
+        { $set: { 'joinRequests.$.settledAmount': owed } }
+      ).catch(() => {});
       logger.error('teamup refund failed on cancel', {
-        err, post: String(post._id), player: String(r.user), amount: r.settledAmount,
+        err, post: String(post._id), player: String(r.user), amount: owed,
       });
-      failedRefunds.push({ user: String(r.user), amount: r.settledAmount });
+      failedRefunds.push({ user: String(r.user), amount: owed });
     }
   }
 
-  post.status = 'cancelled';
-  post.joinRequests.forEach((r) => { if (r.status === 'pending') r.status = 'declined'; });
-  // Nobody is playing this game any more, so nobody can be charged for it.
-  post.confirmedPlayers = [];
-  post.spotsFilled = 0;
-  await post.save();
+  /**
+   * Empty the game in the database rather than saving the copy read at the
+   * top of this handler.
+   *
+   * `post.save()` wrote back a document loaded before any of the refunds
+   * above, and mongoose version-checks a document whose arrays it rewrites —
+   * so a withdrawal landing in between either had its change overwritten or
+   * threw a VersionError, as a 500, after the money had already moved.
+   */
+  await TeamUpPost.updateOne(
+    { _id: post._id },
+    // Nobody is playing this game any more, so nobody can be charged for it.
+    { $set: { status: 'cancelled', confirmedPlayers: [], spotsFilled: 0 } }
+  );
+  await TeamUpPost.updateOne(
+    { _id: post._id },
+    { $set: { 'joinRequests.$[waiting].status': 'declined' } },
+    { arrayFilters: [{ 'waiting.status': 'pending' }] }
+  );
 
-  // Take the host bonus back — cancelling should not be profitable.
-  if (post.hostBonusAwarded) {
+  // Take the host bonus back — cancelling should not be profitable. Only the
+  // call that actually clears the flag takes the points, so a withdrawal
+  // emptying the game at the same moment cannot take them a second time.
+  const clearedBonus = await TeamUpPost.updateOne(
+    { _id: post._id, hostBonusAwarded: true },
+    { $set: { hostBonusAwarded: false } }
+  );
+  if (clearedBonus.modifiedCount) {
     await loyalty.revoke(post.host, LOYALTY.TEAMUP_HOST_BONUS, { reason: 'TeamUp game cancelled' });
-    await TeamUpPost.updateOne({ _id: post._id }, { $set: { hostBonusAwarded: false } });
   }
 
   await notify.notifyMany(
@@ -608,6 +654,8 @@ export const requestToJoin = asyncHandler(async (req, res) => {
 
 /** DELETE /api/teamup/:id/join — withdraw. */
 export const withdrawJoin = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) throw ApiError.badRequest('Invalid post id');
+
   const post = await TeamUpPost.findById(req.params.id);
   if (!post) throw ApiError.notFound('Post not found');
 
@@ -616,10 +664,61 @@ export const withdrawJoin = asyncHandler(async (req, res) => {
     throw ApiError.badRequest('You have not asked to join this game');
   }
 
-  if (request.status === 'accepted') {
-    post.spotsFilled = Math.max(0, post.spotsFilled - request.spots);
-    post.confirmedPlayers = post.confirmedPlayers.filter((p) => String(p) !== String(req.user._id));
-    if (post.status === 'filled') post.status = 'open';
+  const wasAccepted = request.status === 'accepted';
+
+  /**
+   * Claim the withdrawal before any money moves.
+   *
+   * This used to read the post, transfer the refund, and then `save()`. Two
+   * taps on Leave both read the same `settledAmount` and both paid it out: six
+   * taps took ₹2,400 back out of a ₹400 share, straight from the host's
+   * wallet, and five of the six answered with a 500 as their `save()` lost the
+   * version race. Every other money path here already claims first — settle
+   * takes `costSettledAt`, cancel takes the status, a booking refund takes
+   * `refundStatus` — and this one did not.
+   *
+   * So: one conditional update, guarded on the request still being in the
+   * state that was just read, which takes the spot back, marks the request
+   * withdrawn and zeroes the settled amount together. Only the call that
+   * actually flips it gets a non-zero `settledAmount` back in the pre-image
+   * below, so only that call refunds. The rest match nothing.
+   *
+   * `$inc` rather than assigning `spotsFilled`, for the same reason: a
+   * concurrent join increments it, and writing back a number read beforehand
+   * would erase that.
+   */
+  const claimed = await TeamUpPost.findOneAndUpdate(
+    {
+      _id: post._id,
+      joinRequests: { $elemMatch: { _id: request._id, status: request.status } },
+    },
+    {
+      $set: {
+        'joinRequests.$[req].status': 'withdrawn',
+        'joinRequests.$[req].respondedAt': new Date(),
+        'joinRequests.$[req].settledAmount': 0,
+        'joinRequests.$[req].settledAt': null,
+      },
+      ...(wasAccepted
+        ? { $inc: { spotsFilled: -request.spots }, $pull: { confirmedPlayers: req.user._id } }
+        : {}),
+    },
+    // `new: false` — the document as it was, which is where the amount this
+    // call is responsible for returning is recorded.
+    { new: false, arrayFilters: [{ 'req._id': request._id }] }
+  );
+
+  if (!claimed) {
+    throw ApiError.conflict('You have already left this game.');
+  }
+
+  // A freed spot reopens the game. Conditional, so a join that filled it in
+  // the meantime is not undone.
+  if (wasAccepted) {
+    await TeamUpPost.updateOne(
+      { _id: post._id, status: 'filled', $expr: { $lt: ['$spotsFilled', '$spotsNeeded'] } },
+      { $set: { status: 'open' } }
+    );
   }
 
   /**
@@ -630,35 +729,43 @@ export const withdrawJoin = asyncHandler(async (req, res) => {
    * off their share, and the host kept it with no record that anything was
    * owed.
    */
+  const claimedRequest = claimed.joinRequests.find((r) => String(r._id) === String(request._id));
+  const owed = claimedRequest?.settledAmount || 0;
   let refunded = 0;
-  const owed = request.settledAmount || 0;
   if (owed > 0) {
     try {
-      await wallet.transfer(post.host, req.user._id, owed, {
-        description: `Refund — left "${post.title}"`,
+      await wallet.transfer(claimed.host, req.user._id, owed, {
+        description: `Refund — left "${claimed.title}"`,
         reference: String(post._id),
       });
       refunded = owed;
-      request.settledAmount = 0;
-      request.settledAt = null;
     } catch (err) {
       // The host cannot cover it. The player still leaves — trapping someone
       // in a game because the host has spent their money is worse — but the
-      // debt is recorded rather than erased.
+      // debt goes back onto the record rather than being erased by the claim
+      // above, because somebody is still owed it.
+      await TeamUpPost.updateOne(
+        { _id: post._id, 'joinRequests._id': request._id },
+        { $set: { 'joinRequests.$.settledAmount': owed } }
+      ).catch(() => {});
       logger.error('teamup refund failed on withdraw', {
         err, post: String(post._id), player: String(req.user._id), amount: owed,
       });
     }
   }
 
-  request.status = 'withdrawn';
-  request.respondedAt = new Date();
-  await post.save();
-
-  // If the last player has left, the host bonus is no longer earned.
-  if (post.hostBonusAwarded && post.confirmedPlayers.length === 0) {
-    await loyalty.revoke(post.host, LOYALTY.TEAMUP_HOST_BONUS, { reason: 'TeamUp game emptied' });
-    await TeamUpPost.updateOne({ _id: post._id }, { $set: { hostBonusAwarded: false } });
+  // If the last player has left, the host bonus is no longer earned. Counted
+  // from the database rather than the copy read before the claim.
+  const after = await TeamUpPost.findById(post._id).select('hostBonusAwarded confirmedPlayers host').lean();
+  if (after?.hostBonusAwarded && (after.confirmedPlayers || []).length === 0) {
+    const cleared = await TeamUpPost.updateOne(
+      { _id: post._id, hostBonusAwarded: true },
+      { $set: { hostBonusAwarded: false } }
+    );
+    // Only the call that actually cleared the flag takes the points back.
+    if (cleared.modifiedCount) {
+      await loyalty.revoke(after.host, LOYALTY.TEAMUP_HOST_BONUS, { reason: 'TeamUp game emptied' });
+    }
   }
 
   return ok(res, {
@@ -839,21 +946,77 @@ export const settleCosts = asyncHandler(async (req, res) => {
     if (String(playerId) === String(req.user._id)) continue;
     const share = agreedBy.get(String(playerId)) || post.costSharing.perPersonAmount;
     if (!share || share <= 0) continue;
+
+    /**
+     * Record the charge on this player's own row BEFORE taking the money, and
+     * only while they are still in the game.
+     *
+     * `post.confirmedPlayers` was read before this loop started, and a player
+     * can leave while it runs. Charging from that list and recording
+     * afterwards meant somebody who had already withdrawn was debited for a
+     * game they had left, with the refund path having nothing to give back
+     * because their row said they owed nothing.
+     *
+     * Claiming first makes settle and withdraw exclusive per player: whichever
+     * gets there first wins, and the other finds the row already moved.
+     */
+    const claimedPlayer = await TeamUpPost.findOneAndUpdate(
+      {
+        _id: post._id,
+        joinRequests: {
+          $elemMatch: { user: playerId, status: 'accepted', settledAmount: { $in: [0, null] } },
+        },
+      },
+      { $set: { 'joinRequests.$[r].settledAmount': share, 'joinRequests.$[r].settledAt': new Date() } },
+      { arrayFilters: [{ 'r.user': playerId }] }
+    );
+    // They left, or their share is already recorded. Either way, not ours.
+    if (!claimedPlayer) continue;
+
     try {
       await wallet.transfer(playerId, req.user._id, share, {
         description: `TeamUp share — ${post.title}`,
         reference: String(post._id),
       });
-      // Record what actually left this player's wallet, on their own request
-      // entry. A refund later has to know the real figure, not recompute it
-      // from a `perPersonAmount` the host may since have been able to change.
-      await TeamUpPost.updateOne(
-        { _id: post._id, 'joinRequests.user': playerId },
-        { $set: { 'joinRequests.$.settledAmount': share, 'joinRequests.$.settledAt': new Date() } }
-      );
       paid.push(playerId);
       collected += share;
     } catch {
+      /**
+       * Nothing moved, so the row must not claim it did — otherwise leaving
+       * would refund money the host never received.
+       *
+       * Conditional on the row still carrying exactly what was claimed a
+       * moment ago. Resetting it unconditionally erased a debt: if the player
+       * withdraws while the transfer is in flight and the host cannot cover
+       * the refund, withdrawJoin writes the amount back onto the row as owed,
+       * and a blind zero here would wipe the only record that anybody was
+       * owed anything.
+       */
+      const reset = await TeamUpPost.findOneAndUpdate(
+        {
+          _id: post._id,
+          joinRequests: { $elemMatch: { user: playerId, status: 'accepted', settledAmount: share } },
+        },
+        { $set: { 'joinRequests.$[r].settledAmount': 0, 'joinRequests.$[r].settledAt': null } },
+        { arrayFilters: [{ 'r.user': playerId }] }
+      ).catch(() => null);
+
+      if (!reset) {
+        /**
+         * The row moved between the claim and the failed transfer, which is
+         * the one case this pair of claims cannot settle on its own: the
+         * withdrawal read the claimed amount and refunded it, against a
+         * charge that then never landed, so the host is out that share.
+         *
+         * It needs a transfer to fail and a withdrawal to arrive in the same
+         * few milliseconds, so it is rare — but it is real money, and it is
+         * logged with everything needed to put it right by hand rather than
+         * being lost quietly.
+         */
+        logger.error('teamup settle could not unwind a failed charge', {
+          post: String(post._id), player: String(playerId), host: String(post.host), amount: share,
+        });
+      }
       failed.push(playerId);
     }
   }
