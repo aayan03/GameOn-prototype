@@ -465,12 +465,30 @@ export async function cancelBooking(actor, groupRef, { reason = '' } = {}) {
   // left. The unrecoverable remainder is deducted from the refund at the
   // redemption rate — otherwise redeem-then-cancel converts a free booking
   // into free wallet credit.
+  //
+  // ROUNDING: up, deliberately. A point is worth ₹0.1, so a shortfall that is
+  // not a whole multiple of ten has a fractional rupee in it, and whichever way
+  // that fraction goes is a systematic bias — it is the same arithmetic every
+  // time, so it can be aimed at.
+  //
+  // Rounding DOWN was the bug: a booking sized to earn nine points left a
+  // shortfall of nine, `floor(0.9)` recovered nothing, and the redemption stood
+  // — about 0.5% of the booking back as wallet credit, on a booking that was
+  // then refunded in full. Repeatable for as long as somebody cared to run it.
+  //
+  // Rounding to NEAREST does not fix it either: a four-point shortfall still
+  // rounds to zero, and that is just as reachable on purpose.
+  //
+  // Up is the only direction that always recovers at least what was taken. It
+  // costs the customer under a rupee, once, on a cancellation of a booking
+  // whose points they had already spent, and it is reported to them as
+  // `pointsAdjustment` rather than quietly shaving the refund.
   const earned = live.reduce((sum, b) => sum + (b.pointsAwarded || 0), 0);
   let pointsShortfallRupees = 0;
   if (earned > 0) {
     const rev = await loyalty.revoke(rows[0].user, earned, { reason: `Cancelled — ${venue?.name || 'venue'}` });
     const shortfall = Math.max(0, earned - (rev?.revoked || 0));
-    pointsShortfallRupees = Math.floor(shortfall / LOYALTY.POINTS_PER_RUPEE);
+    pointsShortfallRupees = Math.ceil(shortfall / LOYALTY.POINTS_PER_RUPEE);
     await Booking.updateMany({ groupRef }, { $set: { pointsAwarded: 0 } });
   }
 

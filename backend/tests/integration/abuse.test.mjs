@@ -539,3 +539,49 @@ test('the quote endpoint refuses a blacked-out slot too', async () => {
   assert.equal(quote.status, 400);
   assert.match(quote.body.error.message, /out of service/i);
 });
+
+test('redeeming points, then cancelling the bookings that earned them, is not a faucet', async () => {
+  /**
+   * Cancelling takes back the points a booking earned. If they have already
+   * been spent there is nothing to take, so the unrecoverable part is deducted
+   * from the refund instead — at ten points to the rupee.
+   *
+   * That conversion used to round down, and a fraction of a rupee rounded the
+   * same way every time is not a rounding error, it is a rate. A booking sized
+   * to earn nine points left a nine-point shortfall, recovered nothing, and
+   * kept the redemption: wallet credit out of a booking that was then refunded
+   * in full, for as long as anybody cared to repeat it.
+   *
+   * The signup bonus is cleared first, because those points are redeemable by
+   * design and would mask the thing being measured.
+   */
+  const { venue, player } = await stage();
+  await User().updateOne({ _id: player.id }, { $set: { loyaltyPoints: 0, lifetimePoints: 0 } });
+
+  const start = await balanceOf(player.id);
+
+  const refs = [];
+  for (let i = 0; i < 8; i++) {
+    const date = dateKey(2 + i);
+    const slot = await firstOpenSlot(venue._id, date);
+    const made = await book(venue, slot, date, player.token);
+    assert.equal(made.status, 201, `booking ${i}: ${JSON.stringify(made.body)}`);
+    refs.push(made.body.data.booking.groupRef);
+  }
+
+  // Cash the points in BEFORE cancelling. That is the whole move: revoke can
+  // only take back points that are still sitting there.
+  const redeemed = await post('/api/loyalty/redeem', { points: 400 }, { token: player.token });
+  assert.equal(redeemed.status, 200, JSON.stringify(redeemed.body));
+
+  for (const ref of refs) {
+    const res = await patch(`/api/bookings/${ref}/cancel`, {}, { token: player.token });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  }
+
+  const end = await balanceOf(player.id);
+  assert.ok(
+    end <= start,
+    `redeem-then-cancel left the wallet ₹${end - start} up, on ${refs.length} bookings that were all refunded in full`
+  );
+});
