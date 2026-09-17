@@ -18,6 +18,22 @@ export function errorHandler(err, req, res, next) {
     details = Object.fromEntries(Object.entries(err.errors).map(([k, v]) => [k, v.message]));
   }
   if (err.name === 'CastError') { status = 400; message = `Invalid ${err.path}`; }
+  /**
+   * Mongoose optimistic concurrency: this request read a document, someone
+   * else changed its arrays, and this `save()` lost the race on `__v`.
+   *
+   * That is a conflict the caller can simply retry, but nothing mapped it, so
+   * it arrived here as a 500 — which reported the request to the error tracker,
+   * paged whoever was on call, and told the customer the site was broken when
+   * all that had happened is that two people touched one game at once. Every
+   * model keeps a version key and around thirty handlers still `save()` a
+   * document they read a moment earlier, so this is reachable from many of
+   * them, and always under exactly the load where a page is least welcome.
+   */
+  if (err.name === 'VersionError') {
+    status = 409;
+    message = 'Someone else changed this a moment ago. Please try again.';
+  }
   if (err.code === 11000) {
     status = 409;
     const field = Object.keys(err.keyPattern || {}).join(', ');
