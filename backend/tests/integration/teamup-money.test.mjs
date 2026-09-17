@@ -247,3 +247,32 @@ test('a share is never collected from a player who never had the balance', async
   assert.equal(await walletOf(player.id), 100, 'and their wallet is untouched');
   assert.ok((await walletOf(host.id)) >= 0);
 });
+
+test('a player leaving as the host calls it off gets the share back once, not twice', async () => {
+  // Cancelling refunds every settled share, and so does leaving. Both read
+  // the amount from their own copy of the post, so the pair that overlaps
+  // here — the host calling it off as the last player walks — paid the same
+  // share back twice, out of the host's wallet. The host is funded well
+  // above the share so a second refund would succeed rather than bounce.
+  const { host, player, postId, collected } = await settledGame({ hostFloat: 5000 });
+  const hostBefore = await walletOf(host.id);
+  const playerBefore = await walletOf(player.id);
+
+  const [cancelled, left] = await Promise.all([
+    del(`/api/teamup/${postId}`, { token: host.token }),
+    del(`/api/teamup/${postId}/join`, { token: player.token }),
+  ]);
+
+  assert.equal(
+    (await walletOf(player.id)) - playerBefore, collected,
+    'the player is given their share back exactly once'
+  );
+  assert.equal(
+    await walletOf(host.id), hostBefore - collected,
+    'and the host pays it back exactly once'
+  );
+  assert.equal(
+    [cancelled, left].filter((r) => r.status >= 500).length, 0,
+    'and neither request fell over with a server error'
+  );
+});
